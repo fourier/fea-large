@@ -1,0 +1,35 @@
+Typical session:
+--------------
+input filename
+output filename
+loads 50
+newton 50
+start linear
+start nonlinear
+help
+quit/exit
+-------------------
+example1:
+---------------------
+input matlab_geometry.node
+output Dump/linear.msh
+start linear
+---------------------
+example2:
+input matlab_geometry2.node
+output Dump/linear.msh
+start linear
+newton 50
+loads = 50
+start nonlinear
+
+
+
+========================
+start linear filename fileexport
+start nonlinear filename [number_loads = 100 ] [number_newton = 50] [boundary value = from file]
+=================EBNF-like syntax
+begin: start +(linear|nonlinear)
+linear: linear fileinputname fileexportname
+nonlinear: nonlinear fileinputname [[number_loads] [[number_newton] [[boundary_value]]]]
+
