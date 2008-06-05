@@ -71,7 +71,6 @@ void console::run(std::istream& input)
 
 	bool do_exit = false;
 	out_intro();
-	solver_command command(*this);
 	std::string line;
 	do
 	{
@@ -86,10 +85,16 @@ void console::run(std::istream& input)
 				out_help();
 				break;
 			case EStartLinear:
-				command.execute(solver_command::ELinear);
+				{
+					solver_command command(*this);
+					command.execute(solver_command::ELinear);
+				}
 				break;
 			case EStartNonlinear:
-				command.execute(solver_command::ENonlinear);
+				{
+					solver_command command(*this);
+					command.execute(solver_command::ENonlinear);
+				}
 				break;
 			case ELua:
 				if ( !lua_->eval_buffer(line) )
