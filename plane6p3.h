@@ -17,6 +17,7 @@ public:
 	typedef generic_solver<plane::triangle::element6,LGeometryData,triangle::gauss_tri7p> Parent;
 	typedef geometrydata_wrapper<plane::triangle::element6> DataLoaderWrapper;
 	using Parent::Element;
+	using Parent::ElementsArray;
 	using Parent::DataLoader;
 	using Parent::GaussNodes;
 public:
@@ -63,7 +64,7 @@ inline value_type plane6p3::b_matrix_proxy(size_type el, size_type gauss, size_t
 			return gauss_derivatives_[el][gauss][J][1];
 		};
 	}
-
+	assert(false);
 	return 0;
 }
 
@@ -78,6 +79,7 @@ inline value_type plane6p3::b_vector_proxy(size_type el, size_type gauss, size_t
 	case 1:
 		return gauss_derivatives_[el][gauss][j][2];
 	};
+	assert(false); // only 2 values in vector b
 	return 0;
 }
 

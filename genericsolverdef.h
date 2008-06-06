@@ -155,8 +155,8 @@ void generic_solver<E,D,G>::prepare_gauss_nodes(const ElementsArray& elements)
 				// first, put value of form function into the array
 				gauss_derivatives_[el][gauss][shape][0] = elem.form(shape,node); 
 				// next, put all derivatives of this form function into the array
-				for ( size_type dof = 0; dof < Element::DofNumber; ++ dof )
-					gauss_derivatives_[el][gauss][shape][dof+1] = elem.dform(shape,dof,node);
+				for ( size_type dof = 1; dof <= Element::DofNumber; ++ dof )
+					gauss_derivatives_[el][gauss][shape][dof] = elem.dform(shape,dof,node);
 			}
 		}	
 	}

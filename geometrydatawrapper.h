@@ -9,7 +9,7 @@
 #include "elements.h"
 #include "GeometryData.h"
 
-template<typename ElementT = axisymmetric::triangle::element6>
+template<typename ElementT/* = axisymmetric::triangle::element6*/>
 class geometrydata_wrapper : 
 	public data_loader_wrapper<LGeometryData,ElementT>
 {
@@ -57,6 +57,7 @@ public:
 	ElementT operator ( ) ( const LGeometryData::LTriangle& tri ) const 
 	{
 		ElementT el;
+		// TODO: check carefully with orientation
 		el.node(0).dof[0] = nodes_[tri.ind1].x;el.node(0).dof[1] = nodes_[tri.ind1].y;
 		el.node(1).dof[0] = nodes_[tri.ind2].x;el.node(1).dof[1] = nodes_[tri.ind2].y;
 		el.node(2).dof[0] = nodes_[tri.ind3].x;el.node(2).dof[1] = nodes_[tri.ind3].y;
