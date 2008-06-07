@@ -9,6 +9,7 @@
 void solver_command::fill_default_values()
 {
 	variables_.clear();
+	string_variables_.clear();
 	variables_["loads"] = 100;
 	variables_["newton"] = 50;
 	variables_["tolerance"] = 1e-7;
@@ -16,6 +17,9 @@ void solver_command::fill_default_values()
 	variables_["max_tolerance"] = 10;
 	variables_["mu"] = 100;
 	variables_["alpha"] = 100;
+	variables_["nu"] = 0.3;
+	variables_["E"] = 1E9;
+	string_variables_["model"] = "A5";
 	string_variables_["input"] = "matlab_geometry.node";
 	string_variables_["output"] = "solution.msh";
 }
@@ -75,10 +79,13 @@ void solver_command::execute(solver_command::TMethod method)
 	double tolerance = variables_["tolerance"];
 	int searches = variables_["searches"];
 	double max_tolerance = variables_["max_tolerance"];
-	double mu = variables_["mu"] = 100;
-	double alpha = variables_["alpha"] = 100;
-	std::string input = string_variables_["input"];//
-	std::string output = string_variables_["output"];//
+	double mu = variables_["mu"] ;
+	double alpha = variables_["alpha"];
+	double nu = variables_["nu"];
+	double E = variables_["E"];
+	std::string input = string_variables_["input"];
+	std::string output = string_variables_["output"];
+	std::string model_type = string_variables_["model"];
 
 	if ( input.length() == 0 )
 	{
@@ -89,7 +96,17 @@ void solver_command::execute(solver_command::TMethod method)
 //	axisymmetric6p3 task(new model_A5<Matrix>(alpha,mu));
 //	typedef generic_solver<plane::triangle::element6,LGeometryData,triangle::gauss_tri7p> solver;
 	
-	plane6p3 task(new model_A5<Matrix>(alpha,mu));
+	constitutive_equation_base<Matrix>* model = NULL;
+	if ( model_type == "A5" )
+		model = new model_A5<Matrix>(alpha,mu);
+	else if (model_type == "elastic" )
+		model = new model_elastic<Matrix>(E,nu);
+	else 
+	{
+		std::cout << "Material model \"" << model_type << "\" not supported" << std::endl; 
+		return;
+	}
+	plane6p3 task(model);
 	
 	if ( task.load_file(input.c_str()) )
 	{
@@ -99,8 +116,10 @@ void solver_command::execute(solver_command::TMethod method)
 		case ELinear:
 			{
 				output_stream_ << "Starting linear solution process..." << std::endl;
-	//			linear_method<axisymmetric6p3::Element,axisymmetric6p3::DataLoader,axisymmetric6p3::GaussNodes> 
-	//				linear(task);
+
+//				linear_method<axisymmetric6p3::Element,axisymmetric6p3::DataLoader,axisymmetric6p3::GaussNodes> 
+//					linear(task);
+
 				linear_method<plane6p3::Element,plane6p3::DataLoader,plane6p3::GaussNodes> 
 					linear(task);
 				linear.solve(output.c_str());
@@ -113,12 +132,11 @@ void solver_command::execute(solver_command::TMethod method)
 				output_stream_ << "Starting nonlinear solution process..." << std::endl;
 				// 1st: parse output path to get filenames w/o extension
 				// boost::filesystem::path path(output.c_str());
-/*
-				condition_derivative_method<axisymmetric6p3::Element,axisymmetric6p3::DataLoader,
-					axisymmetric6p3::GaussNodes> 
-					connder(task);
-				connder.solve(output.c_str(),loads,newton,searches,tolerance,max_tolerance);
-*/
+
+//				condition_derivative_method<axisymmetric6p3::Element,axisymmetric6p3::DataLoader,
+//					axisymmetric6p3::GaussNodes> 
+//					connder(task);
+
 				condition_derivative_method<plane6p3::Element,plane6p3::DataLoader,plane6p3::GaussNodes> 
 					connder(task);
 				connder.solve(output.c_str(),loads,newton,searches,tolerance,max_tolerance);

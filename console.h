@@ -34,7 +34,7 @@ class console : public config_interface
 public:
 	console();
 	virtual ~console();
-	virtual void run(std::istream& input);
+	virtual void run(std::istream& input,bool silent = false);
 protected:
 	enum TParse
 	{

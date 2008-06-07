@@ -63,46 +63,53 @@ console::~console()
 }
 
 
-void console::run(std::istream& input)
+void console::run(std::istream& input,bool silent)
 {
 	// read here: http://www.ibm.com/developerworks/ru/library/l-lua/
 	// and here: http://www.itc.ua/node/20951/
 	// and here: http://lua-users.org/wiki/TutorialDirectory
 
 	bool do_exit = false;
-	out_intro();
+	if ( !silent )
+		out_intro();
+
+	solver_command command(*this);
 	std::string line;
 	do
 	{
 		out_prompt();
-		std::getline(input,line);
-		switch (process_input(line))
+		if ( std::getline(input,line) ) 
 		{
-			case EExit:
-				do_exit = true;
-				break;
-			case EHelp:
-				out_help();
-				break;
-			case EStartLinear:
-				{
-					solver_command command(*this);
-					command.execute(solver_command::ELinear);
-				}
-				break;
-			case EStartNonlinear:
-				{
-					solver_command command(*this);
-					command.execute(solver_command::ENonlinear);
-				}
-				break;
-			case ELua:
-				if ( !lua_->eval_buffer(line) )
-					out_error();
-				break;
+			switch (process_input(line))
+			{
+				case EExit:
+					do_exit = true;
+					break;
+				case EHelp:
+					out_help();
+					break;
+				case EStartLinear:
+					{
+						command.execute(solver_command::ELinear);
+					}
+					break;
+				case EStartNonlinear:
+					{
+						command.execute(solver_command::ENonlinear);
+					}
+					break;
+				case ELua:
+					if ( !lua_->eval_buffer(line) )
+						out_error();
+					break;
+			}
 		}
+		else 
+			break;
 	} while ( !do_exit );
-	out_exit();
+	
+	if ( !silent )
+		out_exit();
 }
 
 void console::out_intro()
@@ -133,6 +140,7 @@ void console::out_help()
 	std::cout << "Calculation control paramers could be entered in a following way:" << std::endl;
 	std::cout << "variable = value" << std::endl;
 	std::cout << std::endl << "Meaningfull parameters" << std::endl;	
+	std::cout << "'model' - material model, 'elastic' or 'A5', default A5" << std::endl;	
 	std::cout << "'input' - contains file with input geometry" << std::endl;
 	std::cout << "'output' - contains file for output, or folder";
 	std::cout << " in case of nonlinear solution" << std::endl;
@@ -143,6 +151,8 @@ void console::out_help()
 	std::cout << "'searches' - maximum number of line searches" << std::endl;
 	std::cout << "'alpha' - material constant Alpha(default 100)" << std::endl;
 	std::cout << "'mu' - material constant Mu(default 100)" << std::endl;
+	std::cout << "'E' - Young's modulus (for elastic model,default 1E9)" << std::endl;
+	std::cout << "'nu' - Poisson's ratio (for elastic model, default 0.3)" << std::endl;
 	std::cout << "Commands:" << std::endl;
 	std::cout << "help - display this help" << std::endl;
 	std::cout << "exit(quit) - exit program" << std::endl;

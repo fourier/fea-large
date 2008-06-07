@@ -13,7 +13,7 @@ public:
 protected:
 	void parse_cmdline(int argc,const char* argv[]);
 protected:
-	std::string filename_;	
+	std::list<std::string> filenames_;	
 	bool do_batch_;
 };
 
