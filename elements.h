@@ -325,6 +325,147 @@ public:
 protected:
 }; 
 
+// 3-node triangle in plane case
+// wherefore voigt number is 3:
+// dim(Sxx, Syy,Sxy) = 3
+class element3 : public ::element<3,2,3>
+{
+public:
+	typedef ::element<3,2,3> Parent;
+public:
+
+	element3()
+	{
+	}
+
+	element3(const NodeT nodes[])
+	{
+		memcpy(&nodes_,nodes, sizeof(nodes_));
+		calculate_volume();
+	}
+
+	element3(const element3& el)
+	{
+		copy(el);
+	}
+
+	const element3& operator = (const element3& el)
+	{
+		copy(el);
+		return *this;
+	}
+
+	// local(L) coordinates
+	// @param index - index of local function 0..2
+	value_type local(size_type index, const NodeT& node) const
+	{
+		assert(index >= 0 && index < 3);
+		value_type l = 0;
+		
+		const value_type x1 = nodes_[0].dof[0], y1 = nodes_[0].dof[1];
+		const value_type x2 = nodes_[1].dof[0], y2 = nodes_[1].dof[1];
+		const value_type x3 = nodes_[2].dof[0], y3 = nodes_[2].dof[1];
+
+		value_type a[3];
+		a[0] = x2*y3-x3*y2; // el(2,1)*el(3,2)-el(3,1)*el(2,2);
+		a[1] = x3*y1-x1*y3; // el(3,1)*el(1,2)-el(1,1)*el(3,2);
+		a[2] = x1*y2-x2*y1; // el(1,1)*el(2,2)-el(2,1)*el(1,2);
+		
+		value_type b[3];
+		
+		b[0] = y2-y3; // el(2,2)-el(3,2);
+		b[1] = y3-y1; // el(3,2)-el(1,2);
+		b[2] = y1-y2; // el(1,2)-el(2,2);
+
+		value_type c[3];
+		c[0] = x3-x2; // el(3,1)-el(2,1);
+		c[1] = x1-x3; // el(1,1)-el(3,1);
+		c[2] = x2-x1; // el(2,1)-el(1,1);
+
+		l = (a[index]+b[index]*node.dof[0]+c[index]*node.dof[1])/(2.*volume_);;
+
+		return l;
+	}
+
+	// form function
+	// @param index - index of form function[0-(number_of_nodes-1)]
+	// @param node - point to calculate form function
+	value_type form(size_type index, const NodeT& node) const
+	{
+		assert(index >= 0 && index < 3);
+		value_type f = local(index,node);
+		return f;
+	};
+	
+	// function for calculation derivatives of form functions
+	// @param index - index of form function
+	// @param dof - index of degree of freedom to integrate by
+	value_type dform(size_type index, size_type dof, const NodeT& node) const
+	{
+		assert(index >= 0 && index < 3);
+		assert(dof >=0 && dof < MAX_DOF);
+		
+		const value_type x1 = nodes_[0].dof[0], y1 = nodes_[0].dof[1];
+		const value_type x2 = nodes_[1].dof[0], y2 = nodes_[1].dof[1];
+		const value_type x3 = nodes_[2].dof[0], y3 = nodes_[2].dof[1];
+		
+		value_type f = 0;
+
+		switch (dof)
+		{
+		case 0:
+			switch (index)
+			{
+			case 0:
+				f = 0.5*(y2-y3)/volume_;
+				break;
+			case 1:
+				f = 0.5*(y3-y1)/volume_;
+				break;
+			case 2:
+				f = 0.5*(y1-y2)/volume_;
+				break;
+			}
+			break;
+		case 1:
+			switch (index)		
+			{
+			case 0:
+				f = 0.5*(x3-x2)/volume_;
+				break;
+			case 1:
+				f = 0.5*(x1-x3)/volume_;
+				break;
+			case 2:
+				f = 0.5*(x2-x1)/volume_;
+				break;
+			}
+			break;
+		default:
+			assert(false);
+			break;
+		}
+		return f;
+	}
+	
+	void calculate_volume()
+	{
+		const value_type r1 = nodes_[0].dof[0], z1 = nodes_[0].dof[1];
+		const value_type r2 = nodes_[1].dof[0], z2 = nodes_[1].dof[1];
+		const value_type r3 = nodes_[2].dof[0], z3 = nodes_[2].dof[1];
+		Parent::volume_ = 0.5*((r2-r1)*z3+(r1-r3)*z2+(r3-r2)*z1);
+	}
+protected:
+	void copy(const element3& el)
+	{
+		memcpy(&nodes_,el.nodes_, sizeof(nodes_));
+		calculate_volume();
+	}
+
+protected:
+}; 
+
+
 }; // namespace triangle
 }; // namespace plane
 

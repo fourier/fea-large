@@ -7,6 +7,7 @@
 #include "std.h"
 
 // local includes
+#include "global.h"
 #include "elements.h"
 #include "dataloaderwrapper.h"
 #include "models.h"
@@ -32,8 +33,6 @@ public:
 	typedef boost::multi_array<Node,2> GaussArray;
 	typedef boost::multi_array<value_type, 4> MultiArray;
 	typedef boost::multi_array<Matrix,2> GradDefGaussArray;
-	typedef std::pair<size_type,size_type> IndexPair;
-	typedef std::map<size_type,IndexPair> VoigtMapping;
 	typedef data_loader_wrapper<DataLoader,Element,ElementsArray> DataLoaderWrapper;
 public:
 	virtual Matrix& global_matrix() = 0;
@@ -87,9 +86,9 @@ public:
 		VECTOR(x,v.size());
 		try 
 		{
-//			x = LSLAE::gauss_solve_ex(m,v);
+			x = LSLAE::gauss_solve_ex(m,v);
 //			x = LSLAE::lu_substitute_solve(m,v);
-			x = LSLAE::cg_solve(m,v,10000,1e-15);
+//			x = LSLAE::cg_solve(m,v,10000,1e-15);
 			Vector residual = prod(m,x) - v;
 			value_type norm_residual = boost::numeric::ublas::norm_2(residual);
 			std::cout << "||A*x-b|| residual: " << norm_residual << std::endl;; 
@@ -122,8 +121,6 @@ public: // typedefs
 	typedef typename Parent::GaussArray GaussArray;
 	typedef typename Parent::MultiArray MultiArray;
 	typedef typename Parent::GradDefGaussArray GradDefGaussArray;
-	typedef typename Parent::IndexPair IndexPair;
-	typedef typename Parent::VoigtMapping VoigtMapping;
 	typedef typename Parent::DataLoaderWrapper DataLoaderWrapper;
 
 public:
@@ -207,10 +204,14 @@ protected:
 
 	// local matrix may be constructed differently
 	virtual void linear_construct_local_matrix(size_type elem, Matrix& m) const;
+	void linear_construct_local_matrix1(size_type elem, Matrix& m) const;
 
 	// auxulary functions
-	inline value_type elasticity_tensor_to_matrix_proxy(const Tensor4Rank& c_tensor,size_type i, size_type j) const;
-	inline const VoigtMapping& voigt_mapping() const { return voigt_mapping_; };
+	// function which returns component of matrix with indexes (i,j) from 
+	// symmetric tensor of 4th rank c_tensor using Voigt notation
+	inline value_type symm_tensor4rank_matrix_proxy(const Tensor4Rank& c_tensor,size_type i, size_type j) const;
+	// constructor for elasticity matrix
+	inline void construct_elasticity_matrix(Matrix& m,const Tensor4Rank& c_tensor) const;
 	// element of B matrix(matrix of derivatives of shape functions)
 	// must be implemented in derived class
 	// elem - number of element
@@ -259,8 +260,6 @@ protected:
 	MultiArray gauss_derivatives_;
 	// multiarray of initial gauss derivatives
 	MultiArray initial_gauss_derivatives_;
-	// mapping between indexed notation and Voigt notation
-	VoigtMapping voigt_mapping_;
 	// multiarray of Gauss nodes per element 
 	GaussArray gauss_nodes_;
 	// multiarray of initial Gauss nodes per element 

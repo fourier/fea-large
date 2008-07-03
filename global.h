@@ -10,6 +10,8 @@ typedef boost::numeric::ublas::vector<value_type> Vector;
 typedef Matrix::size_type size_type;
 typedef boost::numeric::ublas::matrix<size_type> IndexMatrix;
 typedef boost::multi_array<value_type, 4> Tensor4Rank;
+typedef std::pair<size_type,size_type> IndexPair;
+typedef std::map<size_type,IndexPair> VoigtMapping;
 
 #undef MATRIX
 #define MATRIX(name,rows,cols) Matrix name(rows,cols);name.clear();
@@ -18,6 +20,8 @@ typedef boost::multi_array<value_type, 4> Tensor4Rank;
 
 const value_type PI = 3.14159265358979323846;
 const size_type MAX_DOF = 3;
+
+extern VoigtMapping g_voigt_mapping;
 
 #define DETF
 

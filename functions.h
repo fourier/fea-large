@@ -34,7 +34,7 @@ inline void Dump(const T& arg, const char* fname)
 		for ( typename T::size_type i = 0; i < arg.size1(); ++i )
 		{
 			for ( typename T::size_type j = 0; j < arg.size2(); ++j )
-				fprintf(file,"%e ",arg(i,j));
+				fprintf(file,"%.8f ",arg(i,j));
 			fprintf(file,"\n");
 		}
 		fclose(file);
@@ -48,7 +48,7 @@ inline void Dump<Vector>(const Vector& arg, const char* fname)
 	if ( file )
 	{
 		for ( Vector::size_type i = 0; i < arg.size(); ++i )
-			fprintf(file,"%e\n",arg[i]);
+			fprintf(file,"%.8f\n",arg[i]);
 		fclose(file);
 	}
 }

@@ -88,7 +88,7 @@ class constitutive_equation_base
 public:
 	constitutive_equation_base(value_type const1, value_type const2) : const1_(const1), const2_(const2){}
 	virtual void stress_cauchy(const MatrixT& F,MatrixT& S) const = 0;
-	virtual void update_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const = 0;
+	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const = 0;
 	virtual ~constitutive_equation_base(){}
 protected:
 	value_type const1_; // material constant1
@@ -118,7 +118,7 @@ public:
 #endif
 
 	}
-	virtual void update_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
+	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
 	{
 		//C_{IJKL} = lambda*delta(IJ)*delta(KL) + 2mu*delta(IK)*delta(JL);
 		for ( size_type i = 0; i < MAX_DOF; ++ i )
@@ -162,6 +162,7 @@ public:
 		const value_type nu = Parent::const2_;
 		const value_type lambda = E*nu/((1+nu)*(1-2*nu));
 		const value_type mu = E/(2*(1+nu));
+/*
 #ifdef DETF
 		const typename MatrixT::value_type inv_detF = 1.0/det3x3(F);
 		S = inv_detF*(lambda*kinematics::template invariant<1>::get(C)*boost::numeric::ublas::template identity_matrix<value_type>(3)+
@@ -170,9 +171,34 @@ public:
 		S = lambda*kinematics::template invariant<1>::get(C)*boost::numeric::ublas::template identity_matrix<value_type>(3)+
 			2*mu*C;
 #endif
+*/
+		// S = C ** E;
+		MATRIX(m,3,3);
+/*
+		m(0,0) = 1;  m(0,1) = nu; 
+		m(1,0) = nu; m(1,1) = 1;
+								  m(2,2) = 0.5*(1-nu);
+		m = m*E/(1-nu*nu);
+*/
+		m(0,0) = E/(1-nu*nu);
+		m(1,1) = m(0,0);
+		m(2,2) = 0.5*E/(1+nu);
+		m(0,1) = nu*m(0,0);
+		m(1,0) = m(0,1);
+
+		VECTOR(sigma,3);
+		VECTOR(epsilon,3);
+		epsilon[0] = C(0,0);
+		epsilon[1] = C(1,1);
+		epsilon[2] = C(0,1);
+		sigma = prod(m,epsilon);
+		S(0,0) = sigma[0];
+		S(1,1) = sigma[1];
+		S(0,1) = sigma[2];
+		S(1,0) = sigma[2];
 
 	}
-	virtual void update_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
+	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
 	{
 		//C_{IJKL} = lambda*delta(IJ)*delta(KL) + 2mu*delta(IK)*delta(JL);
 		const value_type E = Parent::const1_;

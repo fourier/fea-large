@@ -13,7 +13,8 @@ template<>
 std::string lua_wrapper::get_variable<std::string>(const char*  var_name)
 {
 	lua_getglobal(lua_state_, var_name);
-	std::string value = lua_tostring(lua_state_, -1);
+	std::string value;
+	value = lua_tostring(lua_state_, -1);
 	return value;
 }
 
@@ -149,7 +150,7 @@ void console::out_help()
 	std::cout << "'tolerance' - contains tolerance for nonlinear solution" << std::endl;
 	std::cout << "'newton' - contains a maximum number of Newton iterations" << std::endl;
 	std::cout << "'searches' - maximum number of line searches" << std::endl;
-	std::cout << "'alpha' - material constant Alpha(default 100)" << std::endl;
+	std::cout << "'lambda' - material constant Lambda(default 100)" << std::endl;
 	std::cout << "'mu' - material constant Mu(default 100)" << std::endl;
 	std::cout << "'E' - Young's modulus (for elastic model,default 1E9)" << std::endl;
 	std::cout << "'nu' - Poisson's ratio (for elastic model, default 0.3)" << std::endl;

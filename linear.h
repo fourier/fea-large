@@ -23,6 +23,8 @@ void linear_method<E,D,G>::solve(const char* filename)
 	ElementsArray elements = solver_.elements();
 	solver_.linear_construct_global_matrix(elements);
 	solver_.apply_bc_prescribed();
+	Dump(solver_.global_matrix(),"Dump/global_applied.txt");
+	Dump(solver_.global_vector(),"Dump/global_vector.txt");
 	Vector global_solution = generic_solver_interface::solve(solver_.global_matrix(),solver_.global_vector());
 	Dump(global_solution,"solution.txt");
 	solver_.update_with_solution(elements,global_solution );

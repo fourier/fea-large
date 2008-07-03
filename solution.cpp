@@ -16,7 +16,7 @@ void solver_command::fill_default_values()
 	variables_["searches"] = 20;
 	variables_["max_tolerance"] = 10;
 	variables_["mu"] = 100;
-	variables_["alpha"] = 100;
+	variables_["lambda"] = 100;
 	variables_["nu"] = 0.3;
 	variables_["E"] = 1E9;
 	string_variables_["model"] = "A5";
@@ -80,7 +80,7 @@ void solver_command::execute(solver_command::TMethod method)
 	int searches = variables_["searches"];
 	double max_tolerance = variables_["max_tolerance"];
 	double mu = variables_["mu"] ;
-	double alpha = variables_["alpha"];
+	double lambda = variables_["lambda"];
 	double nu = variables_["nu"];
 	double E = variables_["E"];
 	std::string input = string_variables_["input"];
@@ -98,7 +98,7 @@ void solver_command::execute(solver_command::TMethod method)
 	
 	constitutive_equation_base<Matrix>* model = NULL;
 	if ( model_type == "A5" )
-		model = new model_A5<Matrix>(alpha,mu);
+		model = new model_A5<Matrix>(lambda,mu);
 	else if (model_type == "elastic" )
 		model = new model_elastic<Matrix>(E,nu);
 	else 

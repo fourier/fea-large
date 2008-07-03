@@ -12,6 +12,7 @@ public:
 	void run(int argc,const char* argv[]);
 protected:
 	void parse_cmdline(int argc,const char* argv[]);
+	void initialize_globals();
 protected:
 	std::list<std::string> filenames_;	
 	bool do_batch_;

@@ -28,24 +28,6 @@ generic_solver<E,D,G>::generic_solver(Model* model) :
 	msize_(0),
 	model_(model)
 {
-	// construct Voigt mapping
-	// Mapping according to Voigt notation
-	// 
-	// 11->1 22->2 33->3
-	// 23->4 13->5 12->6
-	//
-	// or, with zero-based index:
-	//
-	// 00->0 11->1 22->2
-	// 12->3 02->4 01->5
-
-	voigt_mapping_[0] = std::pair<size_type,size_type>(0,0);
-	voigt_mapping_[1] = std::pair<size_type,size_type>(1,1);
-	voigt_mapping_[2] = std::pair<size_type,size_type>(2,2);
-
-	voigt_mapping_[3] = std::pair<size_type,size_type>(1,2);
-	voigt_mapping_[4] = std::pair<size_type,size_type>(0,2);
-	voigt_mapping_[5] = std::pair<size_type,size_type>(0,1);
 }
 
 template<typename E,typename D,typename G>
@@ -128,15 +110,52 @@ void generic_solver<E,D,G>::presize_gauss_nodes()
 }
 
 template<typename E,typename D,typename G>
-inline value_type generic_solver<E,D,G>::elasticity_tensor_to_matrix_proxy(const Tensor4Rank& c_tensor,size_type i, size_type j) const
+inline value_type generic_solver<E,D,G>::symm_tensor4rank_matrix_proxy(const Tensor4Rank& c_tensor,size_type i, size_type j) const
 {
 	// Mapping according to Voight notation
-	// please take a look ate constructor generic_solver
-	size_type k = voigt_mapping_.find(i)->second.first;
-	size_type l = voigt_mapping_.find(i)->second.second;
-	size_type m = voigt_mapping_.find(j)->second.first;
-	size_type n = voigt_mapping_.find(j)->second.second;
+	// please take a look at constructor generic_solver
+	size_type k = g_voigt_mapping.find(i)->second.first;
+	size_type l = g_voigt_mapping.find(i)->second.second;
+	size_type m = g_voigt_mapping.find(j)->second.first;
+	size_type n = g_voigt_mapping.find(j)->second.second;
 	return c_tensor[k][l][m][n];
+}
+
+template<typename E,typename D,typename G>
+inline void generic_solver<E,D,G>::construct_elasticity_matrix(Matrix& m,const Tensor4Rank& c_tensor) const
+{
+/*
+	const size_type voigt = Element::VoigtNumber;
+	for ( size_type i = 0; i < voigt; ++ i )
+	{
+		for ( size_type j = 0; j < voigt; ++ j )
+		{
+			m(i,j) = symm_tensor4rank_matrix_proxy(c_tensor,i,j);
+		}
+	}
+*/
+
+	double nu = 0.3;
+	double E = 1e9;
+/*
+	m(0,0) = 1;  m(0,1) = nu; 
+	m(1,0) = nu; m(1,1) = 1;
+							  m(2,2) = 0.5*(1-nu);
+	m = m*E/(1-nu*nu);
+*/
+/*
+	M(1,1) = E/(1-nu^2);
+	M(2,2) = M(1,1);
+	M(3,3) = 0.5*E/(1+nu);
+	M(1,2) = nu*M(1,1);
+	M(2,1) = M(1,2);
+
+*/
+	m(0,0) = E/(1-nu*nu);
+	m(1,1) = m(0,0);
+	m(2,2) = 0.5*E/(1+nu);
+	m(0,1) = nu*m(0,0);
+	m(1,0) = m(0,1);
 }
 
 template<typename E,typename D,typename G>
@@ -149,14 +168,15 @@ void generic_solver<E,D,G>::prepare_gauss_nodes(const ElementsArray& elements)
 		for ( size_type gauss = 0; gauss < GaussNodes::GaussNumber; ++ gauss )
 		{
 			Node node = elem.template gauss_point<G>(gauss);
+			std::cout << node.dof[0] << " " << node.dof[1] << std::endl;
 			gauss_nodes_[el][gauss] = node;
 			for ( size_type shape = 0; shape < Element::NodesNumber; ++ shape )
 			{
 				// first, put value of form function into the array
 				gauss_derivatives_[el][gauss][shape][0] = elem.form(shape,node); 
 				// next, put all derivatives of this form function into the array
-				for ( size_type dof = 1; dof <= Element::DofNumber; ++ dof )
-					gauss_derivatives_[el][gauss][shape][dof] = elem.dform(shape,dof,node);
+				for ( size_type dof = 0; dof < Element::DofNumber; ++ dof )
+					gauss_derivatives_[el][gauss][shape][dof+1] = elem.dform(shape,dof,node);
 			}
 		}	
 	}
@@ -185,6 +205,10 @@ void generic_solver<E,D,G>::prepare_index()
 template<typename E,typename D,typename G>
 void generic_solver<E,D,G>::linear_construct_local_matrix(size_type el, Matrix& m) const
 {
+//	TODO: remove this
+	linear_construct_local_matrix1(el,m);
+	return;
+
 	assert(m.size1() == m.size2());
 	size_type size = m.size1();
 	
@@ -210,7 +234,11 @@ void generic_solver<E,D,G>::linear_construct_local_matrix(size_type el, Matrix& 
 				B(i,j) = b_matrix_proxy(el,gauss,i,j);
 
 		// next construct C tensor in gauss node
-		model_->update_ctensor(elasticity_tensor,graddefs_gauss_nodes_[el][gauss]);
+		model_->construct_ctensor(elasticity_tensor,graddefs_gauss_nodes_[el][gauss]);
+		// constuct symmetric matrix from tensor
+		MATRIX(C,voigt,voigt);
+		construct_elasticity_matrix(C,elasticity_tensor);
+
 		// next calculate inversion of det(F)
 #ifdef DETF
 		const value_type inv_detF = 1.0/det3x3(graddefs_gauss_nodes_[el][gauss]);
@@ -229,12 +257,55 @@ void generic_solver<E,D,G>::linear_construct_local_matrix(size_type el, Matrix& 
 					for ( size_type l = 0; l < size; ++ l )
 					{
 						// K_il = B_ji * C_jk * B_kl
-						m(i,l) += B(j,i)*elasticity_tensor_to_matrix_proxy(elasticity_tensor,j,k)*B(k,l)*multiplier;
+//						m(i,l) += B(j,i)*symm_tensor4rank_matrix_proxy(elasticity_tensor,j,k)*B(k,l)*multiplier;
+						m(i,l) += B(j,i)*C(j,k)*B(k,l)*multiplier;
 					}
 				}
 			}
 		}
 	}
+}
+
+template<typename E,typename D,typename G>
+void generic_solver<E,D,G>::linear_construct_local_matrix1(size_type el, Matrix& m) const
+{
+	boost::array<Tensor4Rank::index, 4> shape = {{ MAX_DOF, MAX_DOF, MAX_DOF, MAX_DOF }};
+	Tensor4Rank elasticity_tensor(shape);
+	size_type size = m.size1();
+	// first, iterate over gauss nodes
+	for ( size_type gauss = 0; gauss < G::GaussNumber; ++ gauss )
+	{
+		const size_type voigt = Element::VoigtNumber;
+
+		MATRIX(B,voigt,size);
+		for ( size_type i = 0; i < voigt; ++ i )
+			for ( size_type j = 0; j < size; ++ j )
+				B(i,j) = b_matrix_proxy(el,gauss,i,j);
+		char fname[50];
+		sprintf(fname,"Dump/B%d_%d.txt",el+1,gauss+1);
+		Dump(B,fname);
+		// constuct symmetric matrix from tensor
+		MATRIX(C,voigt,voigt);
+		construct_elasticity_matrix(C,elasticity_tensor);
+		Dump(C,"Dump/C.txt");
+		const value_type multiplier = GaussNodes::weights[gauss];	
+		for ( size_type i = 0; i < size; ++ i )
+		{
+			for ( size_type j = 0; j < voigt; ++ j )
+			{
+				for ( size_type k = 0; k < voigt; ++ k )
+				{
+					for ( size_type l = 0; l < size; ++ l )
+					{
+						// K_il = B_ji * C_jk * B_kl
+						m(i,l) += B(j,i)*C(j,k)*B(k,l)*multiplier;
+					}
+				}
+			}
+		}
+	}
+
+
 }
 
 template<typename E,typename D,typename G>
@@ -266,9 +337,13 @@ void generic_solver<E,D,G>::linear_construct_global_matrix(const ElementsArray& 
 		// prepare local matrix
 		linear_construct_local_matrix(el,local);
 		local = local*vol;
+		char fname[50];
+		sprintf(fname,"Dump/K%d.txt",el+1);
+		Dump(local,fname);
 		// distribute local matrix in global matrix
 		distribute_local_in_global_matrix(el,local);
 	}
+	Dump(global_matrix_,"Dump/global.txt");
 }
 
 
@@ -544,7 +619,7 @@ void generic_solver<E,D,G>::construct_residual_force(size_type el,Vector& v) con
 		VECTOR(S,Element::VoigtNumber);
 		for ( size_type l = 0; l < Element::VoigtNumber; ++ l )
 		{
-			S[l] = Sigma(voigt_mapping_.find(l)->second.first,voigt_mapping_.find(l)->second.second);
+			S[l] = Sigma(g_voigt_mapping.find(l)->second.first,g_voigt_mapping.find(l)->second.second);
 		}
 		v += GaussNodes::weights[gauss]*prod(trans(B),S);
 	}

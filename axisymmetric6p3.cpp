@@ -24,7 +24,10 @@ void axisymmetric6p3::linear_construct_local_matrix(size_type el, Matrix& m) con
 			for ( size_type j = 0; j < size; ++ j )
 				B(i,j) = b_matrix_proxy(el,gauss,i,j);
 		// next construct C tensor in gauss node
-		model_->update_ctensor(elasticity_tensor,graddefs_gauss_nodes_[el][gauss]);
+		model_->construct_ctensor(elasticity_tensor,graddefs_gauss_nodes_[el][gauss]);
+		MATRIX(C,Element::VoigtNumber,Element::VoigtNumber);
+		construct_elasticity_matrix(C,elasticity_tensor);
+
 		// next calculate inversion of det(F)
 #ifdef DETF
 		const value_type inv_detF = 1.0/det3x3(graddefs_gauss_nodes_[el][gauss]);
@@ -42,8 +45,8 @@ void axisymmetric6p3::linear_construct_local_matrix(size_type el, Matrix& m) con
 				{
 					for ( size_type l = 0; l < size; ++ l )
 					{
-						m(i,l) += B(j,i)*elasticity_tensor_to_matrix_proxy(elasticity_tensor,j,k)*B(k,l)*multiplier;
-							
+//						m(i,l) += B(j,i)*symm_tensor4rank_matrix_proxy(elasticity_tensor,j,k)*B(k,l)*multiplier;
+						m(i,l) += B(j,i)*C(j,k)*B(k,l)*multiplier;
 					}
 				}
 			}
@@ -159,7 +162,7 @@ void axisymmetric6p3::construct_residual_force(size_type el,Vector& v) const
 		VECTOR(S,Element::VoigtNumber);
 		for ( size_type l = 0; l < Element::VoigtNumber; ++ l )
 		{
-			S[l] = Sigma(voigt_mapping_.find(l)->second.first,voigt_mapping_.find(l)->second.second);
+			S[l] = Sigma(g_voigt_mapping.find(l)->second.first,g_voigt_mapping.find(l)->second.second);
 		}
 		v += GaussNodes::weights[gauss]*prod(trans(B),S)
 			* 2*PI*gauss_nodes_[el][gauss].dof[0];
