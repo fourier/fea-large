@@ -86,9 +86,9 @@ public:
 		VECTOR(x,v.size());
 		try 
 		{
-			x = LSLAE::gauss_solve_ex(m,v);
+//			x = LSLAE::gauss_solve_ex(m,v);
 //			x = LSLAE::lu_substitute_solve(m,v);
-//			x = LSLAE::cg_solve(m,v,10000,1e-15);
+			x = LSLAE::cg_solve(m,v,10000,1e-15);
 			Vector residual = prod(m,x) - v;
 			value_type norm_residual = boost::numeric::ublas::norm_2(residual);
 			std::cout << "||A*x-b|| residual: " << norm_residual << std::endl;; 

@@ -205,13 +205,21 @@ public:
 		const value_type nu = Parent::const2_;
 		const value_type lambda = E*nu/((1+nu)*(1-2*nu));
 		const value_type mu = E/(2*(1+nu));
+		const value_type K = E/(3*(1-2*nu));
 	
 		for ( size_type i = 0; i < MAX_DOF; ++ i )
 			for ( size_type j = 0; j < MAX_DOF; ++ j )
 				for ( size_type k = 0; k < MAX_DOF; ++ k )
 					for ( size_type l = 0; l < MAX_DOF; ++ l )
+					{
+						const value_type Iijkl = 0.5*(kroneker_delta(i,k)*kroneker_delta(j,l)+kroneker_delta(i,l)*kroneker_delta(j,k));
+						const value_type delta = kroneker_delta(i,j)*kroneker_delta(k,l);
 						c_tensor[i][j][k][l] = 
-							lambda*kroneker_delta(i,j)*kroneker_delta(k,l)+2*mu*kroneker_delta(i,k)*kroneker_delta(j,l);
+//							lambda*kroneker_delta(i,j)*kroneker_delta(k,l)+2*mu*kroneker_delta(i,k)*kroneker_delta(j,l);
+//									lambda*kroneker_delta(i,j)*kroneker_delta(k,l)+
+//									2*mu*(kroneker_delta(i,k)*kroneker_delta(j,l)+kroneker_delta(i,l)*kroneker_delta(j,k));
+									K*delta+2*mu*(Iijkl-1/3.*delta);
+					}
 	};
 };
 

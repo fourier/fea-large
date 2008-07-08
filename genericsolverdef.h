@@ -327,6 +327,30 @@ void generic_solver<E,D,G>::distribute_local_in_global_vector(size_type el, cons
 template<typename E,typename D,typename G>
 void generic_solver<E,D,G>::linear_construct_global_matrix(const ElementsArray& elements)
 {
+	boost::array<Tensor4Rank::index, 4> shape = {{ MAX_DOF, MAX_DOF, MAX_DOF, MAX_DOF }};
+	Tensor4Rank elasticity_tensor(shape);
+	const size_type voigt = Element::VoigtNumber;
+	MATRIX(C,voigt,voigt);
+	construct_elasticity_matrix(C,elasticity_tensor);
+	for ( int i = 0; i < voigt; ++ i )
+	{
+		for (int j = 0; j < voigt; ++ j )
+		{
+			std::cout << C(i,j) << " ";
+		}
+		std::cout << std::endl;
+	}
+	std::cout << "next" << std::endl;
+	model_->construct_ctensor(elasticity_tensor,C);
+	for ( int i = 0; i < voigt; ++ i )
+	{
+		for (int j = 0; j < voigt; ++ j )
+		{
+			std::cout << symm_tensor4rank_matrix_proxy(elasticity_tensor,i,j) << " ";
+		}
+		std::cout << std::endl;
+	}	
+
 	// iterate through all elements
 	for ( size_type el = 0; el < elements.size(); ++ el  )
 	{

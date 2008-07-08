@@ -19,7 +19,7 @@ void solver_command::fill_default_values()
 	variables_["lambda"] = 100;
 	variables_["nu"] = 0.3;
 	variables_["E"] = 1E9;
-	string_variables_["model"] = "A5";
+	string_variables_["model"] = "elastic";
 	string_variables_["input"] = "matlab_geometry.node";
 	string_variables_["output"] = "solution.msh";
 }
