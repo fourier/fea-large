@@ -121,8 +121,8 @@ inline value_type generic_solver<E,D,G>::symm_tensor4rank_matrix_proxy(const Ten
 	return c_tensor[k][l][m][n];
 }
 
-template<typename E,typename D,typename G>
-inline void generic_solver<E,D,G>::construct_elasticity_matrix(Matrix& m,const Tensor4Rank& c_tensor) const
+template<typename El,typename D,typename G>
+inline void generic_solver<El,D,G>::construct_elasticity_matrix(Matrix& m,const Tensor4Rank& c_tensor) const
 {
 /*
 	const size_type voigt = Element::VoigtNumber;
@@ -161,6 +161,7 @@ inline void generic_solver<E,D,G>::construct_elasticity_matrix(Matrix& m,const T
 template<typename E,typename D,typename G>
 void generic_solver<E,D,G>::prepare_gauss_nodes(const ElementsArray& elements)
 {
+
 	// fill multiarray with derivatives
 	for ( size_type el = 0; el < elements.size(); ++ el )
 	{

@@ -54,5 +54,6 @@
 
 // other headers
 #include "global.h"
+#include "jobtype.h"
 
 #endif // __STD_H__

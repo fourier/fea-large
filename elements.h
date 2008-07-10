@@ -1,104 +1,7 @@
 #ifndef __ELEMENTS_H__
 #define __ELEMENTS_H__
 
-// precompiled headers
-#include "std.h"
-
-// local includes
-#include "functions.h"
-
-
-template<size_type DoF,typename T = value_type>
-struct Node
-{
-	typedef T value_type;
-	Node() { memset(dof,0,sizeof(dof)); }
-	value_type dof[DoF];
-};
-
-
-template<size_type DoF>
-std::istream& operator >> (std::istream& s,Node<DoF>& n)
-{
-	for (size_type i = 0; i < DoF; ++ i)
-	{
-        s >> n.dof[i];
-		s.get();
-	}
-	return s;
-}
-
-
-// NodesN - number of nodes per element
-// DoF - number of degrees of freedom per node
-// VoigtSize - size of voigt vector of strain:
-// can be 3 (for plane elements), 4(for axisymmetric elements)
-// 6 for 3d elements
-template<size_type NodesN,size_type DoF,size_type VoigtSize >
-class element
-{
-public:
-	enum
-	{
-		DofNumber = DoF,
-		NodesNumber = NodesN,
-		VoigtNumber = VoigtSize
-	};
-public:
-	typedef Node<DoF> NodeT;
-	typedef typename NodeT::value_type value_type;
-public:
-	// C'tor/D'tor 
-	element() : volume_(0) { memset(&nodes_,0, sizeof(nodes_)); }
-	
-	virtual ~element(){};
-	// Getters/Setters
-	NodeT& node(size_type i) { return nodes_[i]; }
-	const NodeT& node(size_type i) const { return nodes_[i]; }
-	const value_type volume() const { return volume_;}
-
-	// form function
-	// @param index - index of form function[0-(number_of_nodes-1)]
-	// @param node - point to calculate form function
-	virtual value_type form(size_type index, const NodeT& node) const = 0;
-
-	// function for calculation derivatives of form functions
-	// @param index - index of form function
-	// @param dof - index of degree of freedom to integrate by
-	virtual value_type dform(size_type index, size_type dof, const NodeT& node) const = 0;
-
-	NodeT center() const
-	{
-		NodeT node;
-		for ( size_type i = 0; i < NodesNumber; ++ i )
-			for ( size_type j = 0; j < DoF; ++ j )
-				node.dof[j] += nodes_[i].dof[j]/(value_type)NodesNumber; 
-		return node;
-	}
-
-	// function for calculation of the gauss point
-	// index - index of the Gauss point
-	template<typename GaussT>
-	NodeT gauss_point(size_type index) const 
-	{
-		BOOST_STATIC_ASSERT(GaussT::DoFNumber == DoF);
-		assert(index >= 0 && index < GaussT::GaussNumber);
-
-		NodeT node;
-		for ( size_type i = 0; i < GaussT::NodesNumber; ++ i )
-			for ( size_type j = 0; j < DoF; ++ j )
-				node.dof[j] += nodes_[i].dof[j]*GaussT::coeffs[index][i];
-		
-		return node;
-	}
-	virtual void calculate_volume() {volume_ = 0;};
-protected:
-	//
-protected:
-	NodeT nodes_[NodesN];
-	// volume
-	value_type volume_;
-};
+#include "genericelement.h"
 
 namespace axisymmetric 
 {
@@ -112,26 +15,19 @@ class element6 : public ::element<6,2,4>
 public:
 	typedef ::element<6,2,4> Parent;
 public:
-
-	element6()
+	element6() : Parent()
 	{
 	}
-
-	element6(const NodeT nodes[])
-	{
-		memcpy(&nodes_,nodes, sizeof(nodes_));
-		calculate_volume();
-	}
-
 	element6(const element6& el)
 	{
 		copy(el);
 	}
 
-	const element6& operator = (const element6& el)
+	element6(const NodeT nodes[])
 	{
-		copy(el);
-		return *this;
+		for ( size_type i = 0; i < NodesNumber; ++ i )
+			nodes_[i] = nodes[i];
+		calculate();
 	}
 
 	// local(L) coordinates
@@ -273,13 +169,6 @@ public:
 		Parent::volume_ = 0.5*((r2-r1)*z3+(r1-r3)*z2+(r3-r2)*z1);
 	}
 protected:
-	void copy(const element6& el)
-	{
-		memcpy(&nodes_,el.nodes_, sizeof(nodes_));
-		calculate_volume();
-	}
-
-protected:
 }; 
 
 }; // namespace triangle
@@ -302,25 +191,20 @@ public:
 	};
 	typedef axisymmetric::triangle::element6 Parent;
 public:
-	element6()
+	element6() : Parent()
 	{
 	}
 	element6(const NodeT nodes[])
 	{
-		memcpy(&nodes_,nodes, sizeof(nodes_));
-		calculate_volume();
+		for ( size_type i = 0; i < NodesNumber; ++ i )
+			nodes_[i] = nodes[i];
+		calculate();
 	}
-
 	element6(const element6& el)
 	{
 		copy(el);
 	}
 
-	const element6& operator = (const element6& el)
-	{
-		copy(el);
-		return *this;
-	}
 
 protected:
 }; 
@@ -334,25 +218,9 @@ public:
 	typedef ::element<3,2,3> Parent;
 public:
 
-	element3()
-	{
-	}
-
-	element3(const NodeT nodes[])
-	{
-		memcpy(&nodes_,nodes, sizeof(nodes_));
-		calculate_volume();
-	}
-
 	element3(const element3& el)
 	{
 		copy(el);
-	}
-
-	const element3& operator = (const element3& el)
-	{
-		copy(el);
-		return *this;
 	}
 
 	// local(L) coordinates
@@ -456,13 +324,6 @@ public:
 		Parent::volume_ = 0.5*((r2-r1)*z3+(r1-r3)*z2+(r3-r2)*z1);
 	}
 protected:
-	void copy(const element3& el)
-	{
-		memcpy(&nodes_,el.nodes_, sizeof(nodes_));
-		calculate_volume();
-	}
-
-protected:
 }; 
 
 
@@ -471,8 +332,9 @@ protected:
 
 
 // Tests section
-
+/*
 void test_element_axisymmetric_triangle_p6();
+*/
 void test_element_plane_triangle_p6();
 
 

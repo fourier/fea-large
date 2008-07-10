@@ -11,10 +11,10 @@
 class plane6p3 : 
 	public generic_solver<plane::triangle::element6,
 						  LGeometryData,
-						  triangle::gauss_tri1p>
+						  triangle::gauss_tri7p>
 {
 public:
-	typedef generic_solver<plane::triangle::element6,LGeometryData,triangle::gauss_tri1p> Parent;
+	typedef generic_solver<plane::triangle::element6,LGeometryData,triangle::gauss_tri7p> Parent;
 	typedef geometrydata_wrapper<plane::triangle::element6> DataLoaderWrapper;
 	using Parent::Element;
 	using Parent::ElementsArray;

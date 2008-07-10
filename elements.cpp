@@ -4,7 +4,7 @@
 #include "elements.h"
 #include "gauss_coeffs.h"
 
-
+/*
 // test for element_plane_triangle_p6
 void test_element_axisymmetric_triangle_p6()
 {
@@ -119,6 +119,7 @@ void test_element_axisymmetric_triangle_p6()
 	assert(fabs(value-integral)<=1); // simple check
 
 }
+*/
 
 void test_element_plane_triangle_p6()
 {
@@ -136,21 +137,24 @@ void test_element_plane_triangle_p6()
 
 	// test element
 	testelement el(nodes);
+
 	// test copyconstructor 
 	testelement el1(el);
+	//el1 = el;
 	
 	// first of all - test local coordinates
 	for ( size_type i = 0; i < 3; ++ i )
 		for ( size_type j = 0; j < 3; ++ j )
-			assert( el.local(i,nodes[j]) == kroneker_delta(i,j) );
+			assert( el1.local(i,nodes[j]) == kroneker_delta(i,j) );
 
 	// second, test form functions
 	for ( size_type i = 0; i < 6; ++ i )
 	{
 		for ( size_type j = 0; j < 6; ++ j )
 		{
-			assert( el.form(i,nodes[j]) == kroneker_delta(i,j) );
+			assert( el1.form(i,nodes[j]) == kroneker_delta(i,j) );
 		}
 	}
 	assert(testelement::VoigtNumber == 3);
 }
+
