@@ -55,18 +55,17 @@ private:
 // VoigtSize - size of voigt vector of strain:
 // can be 3 (for plane elements), 4(for axisymmetric elements)
 // 6 for 3d elements
-template<size_type NodesN,size_type DoF,size_type VoigtSize, typename GaussNodes = triangle::gauss_tri7p>
+template<size_type NodesN,size_type DoF,typename GaussNodes/* = triangle::gauss_tri7p*/>
 class element
 {
 public:
 	enum
 	{
-		DofNumber = DoF,
 		NodesNumber = NodesN,
-		VoigtNumber = VoigtSize
+		DofNumber = DoF
 	};
 public:
-	typedef element<NodesN,DoF,VoigtSize,GaussNodes> SelfT;
+	typedef element<NodesN,DoF,GaussNodes> SelfT;
 	typedef Node<DoF> NodeT;
 	typedef typename NodeT::value_type value_type;
 	typedef std::vector<NodeT> NodesArrayT;
@@ -105,14 +104,27 @@ public:
 				node.dof[j] += nodes_[i].dof[j]/(value_type)NodesNumber; 
 		return node;
 	}
+	// getter for gauss nodes
+	const NodeT& gauss_node(size_type i) const { return gauss_nodes_[i]; }
+
+	// getter for values of form functions in gauss nodes
+	value_type gauss_form(size_type gauss_nodes,size_type form_function) const
+	{
+		return gauss_forms_[gauss_node][form_function];
+	}
+
+	// getter for derivatives of form functions in gauss nodes
+	value_type gauss_derivative(size_type gauss_node,size_type form_function,size_type dof) const 
+	{
+		return gauss_derivatives_[gauss_node][form_function][dof];
+	}
+	
 
 	// function for calculation of the gauss point
 	// index - index of the Gauss point
 	template<typename G>
 	NodeT gauss_point(size_type index) const 
 	{
-// TODO: check why it can't be compiled
-//		BOOST_STATIC_ASSERT(GaussCoeffs::NodesNumber == NodesNumber);
 		assert(index >= 0 && index < G::GaussNumber);
 
 		NodeT node;

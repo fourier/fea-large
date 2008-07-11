@@ -120,7 +120,7 @@ void test_element_axisymmetric_triangle_p6()
 
 }
 */
-
+/*
 void test_element_plane_triangle_p6()
 {
 	typedef plane::triangle::element6 testelement;
@@ -157,4 +157,4 @@ void test_element_plane_triangle_p6()
 	}
 	assert(testelement::VoigtNumber == 3);
 }
-
+*/

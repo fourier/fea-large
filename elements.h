@@ -3,17 +3,12 @@
 
 #include "genericelement.h"
 
-namespace axisymmetric 
-{
-namespace triangle 
-{
-// 6-nodes triangle in axisymmetric case
-// wherefore voigt number is 4:
-// dim(Srr, Szz,Sff,Srz) = 4
-class element6 : public ::element<6,2,4>
+// 6-nodes triangle 
+template<typename Gauss>
+class element6 : public ::element<6,2,Gauss>
 {
 public:
-	typedef ::element<6,2,4> Parent;
+	typedef ::element<6,2,Gauss> Parent;
 public:
 	element6() : Parent()
 	{
@@ -171,51 +166,12 @@ public:
 protected:
 }; 
 
-} // namespace triangle
-} // namespace axisymmetric
-
-
-namespace plane
-{
-namespace triangle 
-{
-// 6-nodes triangle in plane case
-// wherefore voigt number is 3:
-// dim(Sxx, Syy,Sxy) = 3
-class element6 : public axisymmetric::triangle::element6
+// 3-node triangle 
+template<typename Gauss>
+class element3 : public ::element<3,2,Gauss>
 {
 public:
-	enum
-	{
-		VoigtNumber = 3
-	};
-	typedef axisymmetric::triangle::element6 Parent;
-public:
-	element6() : Parent()
-	{
-	}
-	element6(const NodeT nodes[])
-	{
-		for ( size_type i = 0; i < NodesNumber; ++ i )
-			nodes_[i] = nodes[i];
-		calculate();
-	}
-	element6(const element6& el)
-	{
-		copy(el);
-	}
-
-
-protected:
-}; 
-
-// 3-node triangle in plane case
-// wherefore voigt number is 3:
-// dim(Sxx, Syy,Sxy) = 3
-class element3 : public ::element<3,2,3>
-{
-public:
-	typedef ::element<3,2,3> Parent;
+	typedef ::element<3,2,Gauss> Parent;
 public:
 
 	element3(const element3& el)
@@ -327,16 +283,12 @@ protected:
 }; 
 
 
-} // namespace triangle
-} // namespace plane
-
 
 // Tests section
 /*
 void test_element_axisymmetric_triangle_p6();
-*/
 void test_element_plane_triangle_p6();
-
+*/
 
 
 #endif // __ELEMENTS_H__

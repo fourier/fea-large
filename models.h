@@ -6,6 +6,74 @@
 
 // local includes
 #include "functions.h"
+#include "jobtype.h"
+#include "global.h"
+
+// namespace for various voigt mappings
+namespace mapping
+{
+
+// 
+// Mapping from symmetric tensor of 4th rank to symmetric matrix indicies
+// 
+value_type tensor4rank_matrix_proxy(const Tensor4Rank& c_tensor,size_type i, size_type j) 
+{
+	// Mapping according to Voight notation
+	// please take a look at constructor generic_solver
+	size_type k = g_voigt_mapping.find(i)->second.first;
+	size_type l = g_voigt_mapping.find(i)->second.second;
+	size_type m = g_voigt_mapping.find(j)->second.first;
+	size_type n = g_voigt_mapping.find(j)->second.second;
+	return c_tensor[k][l][m][n];
+}
+
+// 
+// Convert matrix to vector using Voigt notation
+// 
+template<int>
+void vector_from_matrix(const Matrix& m,Vector& v);
+
+template<>
+void vector_from_matrix<job::PlaneStrain>(const Matrix& m,Vector& v)
+{
+	v.clear();
+	v.resize(job::plane_strain::Voigt);
+	v[0] = m(0,0);
+	v[1] = m(1,1);
+	v[2] = m(0,1);
+}
+template<>
+void vector_from_matrix<job::Axisymmetric>(const Matrix& m,Vector& v)
+{
+	v.clear();
+	v.resize(job::axisymmetric::Voigt);
+	v[0] = m(0,0);
+	v[1] = m(1,1);
+	v[2] = m(2,2);
+	v[3] = m(0,1);
+}
+template<>
+void vector_from_matrix<job::ThreeDimension>(const Matrix& m,Vector& v)
+{
+	v.clear();
+	v.resize(job::three_dimension::Voigt);
+	for ( size_type i = 0; i < g_voigt_mapping.size() ; ++ i )
+	{
+		size_type k = g_voigt_mapping.find(i)->second.first;
+		size_type l = g_voigt_mapping.find(i)->second.second;
+		v[i] = m(k,l);
+	}
+}
+
+// 
+// Convert vector to matrix using Voigt notation
+// 
+
+template<int>
+void vector_from_matrix<job::ThreeDimension>(const Vector& v, Matrix& m);
+
+
+} // end namespace mapping
 
 // this namespace will include major kinematics operations
 //
@@ -82,13 +150,19 @@ namespace kinematics
 	};
 };
 
+
+
 template<typename MatrixT>
 class constitutive_equation_base
 {
 public:
 	constitutive_equation_base(value_type const1, value_type const2) : const1_(const1), const2_(const2){}
 	virtual void stress_cauchy(const MatrixT& F,MatrixT& S) const = 0;
+	virtual void stress_cauchy_small(const MatrixT& F,MatrixT& S,job::type type) const = 0;
 	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const = 0;
+	virtual void elasticity_matrix(Matrix& C,job::type type) const = 0;
+	
+
 	virtual ~constitutive_equation_base(){}
 protected:
 	value_type const1_; // material constant1
@@ -116,8 +190,17 @@ public:
 		S = (Parent::const1_*kinematics::template invariant<1>::get(C)*boost::numeric::ublas::template identity_matrix<value_type>(3)+
 			2*Parent::const2_*C);
 #endif
+	}
+
+	virtual void stress_cauchy_small(const MatrixT& F,MatrixT& S,job::type type) const
+	{
+		MATRIX(M,type,type);
+		VECTOR(V,type);
+		MatrixT C(boost::numeric::ublas::template zero_matrix<value_type>(3,3));
+		kinematics::strains::right::cauchy_green(F,C);
 
 	}
+
 	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
 	{
 		//C_{IJKL} = lambda*delta(IJ)*delta(KL) + 2mu*delta(IK)*delta(JL);
@@ -143,6 +226,44 @@ public:
 									F(i,I)*F(j,J)*F(k,K)*F(l,L);
 					}
 	};
+	virtual void elasticity_matrix(Matrix& C,job::type type) const
+	{
+		construct_elasticity_matrix<job>(C);
+	}
+
+protected:
+	template<int>
+	void construct_elasticity_matrix(Matrix& C) const;
+	template<>
+	void construct_elasticity_matrix<job::PlaneStrain>(Matrix& C) const
+	{
+		value_type l = Parent::const1_;
+		value_type m = Parent::const1_;
+		C.clear();
+		C.resize(job::plane_strain::Voigt,job::plane_strain::Voigt);
+		C(0,0) = l+2*m;	C(0,1) = l;		
+		C(1,0) = l;		C(1,1) = l+2*m;
+										C(2,2) = 2*m;
+	}
+	template<>
+	void construct_elasticity_matrix<job::Axisymmetric>(Matrix& C) const
+	{
+		value_type l = Parent::const1_;
+		value_type m = Parent::const1_;	
+		C.clear();
+		C.resize(job::axisymmetric::Voigt,job::plane_strain::Voigt);
+		C(0,0) = l+2*m;	C(0,1) = l;		
+		C(1,0) = l;		C(1,1) = l+2*m;
+										C(2,2) = 2*m;
+														C(3,3) = 2*m;
+	}
+	template<>
+	void construct_elasticity_matrix<job::ThreeDimension>(Matrix& C) const
+	{
+		C.clear();
+		C.resize(job::three_dimension::Voigt,job::plane_strain::Voigt);
+	}
+
 };
 
 template<typename MatrixT>
@@ -162,7 +283,6 @@ public:
 		const value_type nu = Parent::const2_;
 		const value_type lambda = E*nu/((1+nu)*(1-2*nu));
 		const value_type mu = E/(2*(1+nu));
-/*
 #ifdef DETF
 		const typename MatrixT::value_type inv_detF = 1.0/det3x3(F);
 		S = inv_detF*(lambda*kinematics::template invariant<1>::get(C)*boost::numeric::ublas::template identity_matrix<value_type>(3)+
@@ -171,32 +291,6 @@ public:
 		S = lambda*kinematics::template invariant<1>::get(C)*boost::numeric::ublas::template identity_matrix<value_type>(3)+
 			2*mu*C;
 #endif
-*/
-		// S = C ** E;
-		MATRIX(m,3,3);
-/*
-		m(0,0) = 1;  m(0,1) = nu; 
-		m(1,0) = nu; m(1,1) = 1;
-								  m(2,2) = 0.5*(1-nu);
-		m = m*E/(1-nu*nu);
-*/
-		m(0,0) = E/(1-nu*nu);
-		m(1,1) = m(0,0);
-		m(2,2) = 0.5*E/(1+nu);
-		m(0,1) = nu*m(0,0);
-		m(1,0) = m(0,1);
-
-		VECTOR(sigma,3);
-		VECTOR(epsilon,3);
-		epsilon[0] = C(0,0);
-		epsilon[1] = C(1,1);
-		epsilon[2] = C(0,1);
-		sigma = prod(m,epsilon);
-		S(0,0) = sigma[0];
-		S(1,1) = sigma[1];
-		S(0,1) = sigma[2];
-		S(1,0) = sigma[2];
-
 	}
 	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
 	{

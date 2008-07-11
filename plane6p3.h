@@ -39,7 +39,6 @@ private:
 
 inline value_type plane6p3::b_matrix_proxy(size_type el, size_type gauss, size_type i, size_type j) const
 {
-	// TODO: implement plane6p3::b_matrix_proxy
 	size_type J = j >> 1;
 	if ((j&1) == 0)
 	{
