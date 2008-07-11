@@ -13,7 +13,7 @@ DEPENDENCIES = $(patsubst %.cpp,%.d,$(wildcard *.cpp))
 
 #PRECOMPILEDHEADER = std.h.gch
 
-LINKFLAGS = -lm -llua -L$(LUAPATH)/src
+LINKFLAGS = -lm -llua51 -L$(LUAPATH)/src
 CPPFLAGS = -Wno-deprecated -pg
 
 all: $(OUTPUT) 
