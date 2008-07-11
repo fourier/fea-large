@@ -31,38 +31,38 @@ value_type tensor4rank_matrix_proxy(const Tensor4Rank& c_tensor,size_type i, siz
 // Convert matrix to vector using Voigt notation
 // 
 template<int>
-void vector_from_matrix(const Matrix& m,Vector& v);
+Vector vector_from_matrix(const Matrix& m);
 
 template<>
-void vector_from_matrix<job::PlaneStrain>(const Matrix& m,Vector& v)
+Vector vector_from_matrix<job::PlaneStrain>(const Matrix& m)
 {
-	v.clear();
-	v.resize(job::plane_strain::Voigt);
+	VECTOR(v,job::plane_strain::Voigt);
 	v[0] = m(0,0);
 	v[1] = m(1,1);
 	v[2] = m(0,1);
+	return v;
 }
 template<>
-void vector_from_matrix<job::Axisymmetric>(const Matrix& m,Vector& v)
+Vector vector_from_matrix<job::Axisymmetric>(const Matrix& m)
 {
-	v.clear();
-	v.resize(job::axisymmetric::Voigt);
+	VECTOR(v,job::axisymmetric::Voigt);
 	v[0] = m(0,0);
 	v[1] = m(1,1);
 	v[2] = m(2,2);
 	v[3] = m(0,1);
+	return v;
 }
 template<>
-void vector_from_matrix<job::ThreeDimension>(const Matrix& m,Vector& v)
+Vector vector_from_matrix<job::ThreeDimension>(const Matrix& m)
 {
-	v.clear();
-	v.resize(job::three_dimension::Voigt);
+	VECTOR(v,job::three_dimension::Voigt);
 	for ( size_type i = 0; i < g_voigt_mapping.size() ; ++ i )
 	{
 		size_type k = g_voigt_mapping.find(i)->second.first;
 		size_type l = g_voigt_mapping.find(i)->second.second;
 		v[i] = m(k,l);
 	}
+	return v;
 }
 
 // 
@@ -70,11 +70,47 @@ void vector_from_matrix<job::ThreeDimension>(const Matrix& m,Vector& v)
 // 
 
 template<int>
-void vector_from_matrix<job::ThreeDimension>(const Vector& v, Matrix& m);
+Matrix matrix_from_vector(const Vector& v);
 
+template<>
+Matrix matrix_from_vector<job::PlaneStrain>(const Vector& v)
+{
+	MATRIX(m,job::plane_strain::Voigt,job::plane_strain::Voigt);
+	m(0,0) = v[0];
+	m(1,1) = v[1];
+	m(0,1) = v[2];
+	m(1,0) = v[2];
+	return m;
+}
+
+template<>
+Matrix matrix_from_vector<job::Axisymmetric>(const Vector& v)
+{
+	MATRIX(m,job::axisymmetric::Voigt,job::axisymmetric::Voigt);
+	m(0,0) = v[0];
+	m(1,1) = v[1];
+	m(2,2) = v[2];
+	m(0,1) = v[3];
+	m(1,0) = v[3];
+	return m;
+}
+
+template<>
+Matrix matrix_from_vector<job::ThreeDimension>(const Vector& v)
+{
+	MATRIX(m,job::three_dimension::Voigt,job::three_dimension::Voigt);
+	for ( size_type i = 0; i < g_voigt_mapping.size() ; ++ i )
+	{
+		size_type k = g_voigt_mapping.find(i)->second.first;
+		size_type l = g_voigt_mapping.find(i)->second.second;
+		m(k,l) = v[i];
+	}
+	return m;
+}
 
 } // end namespace mapping
 
+// 
 // this namespace will include major kinematics operations
 //
 namespace kinematics
@@ -158,9 +194,22 @@ class constitutive_equation_base
 public:
 	constitutive_equation_base(value_type const1, value_type const2) : const1_(const1), const2_(const2){}
 	virtual void stress_cauchy(const MatrixT& F,MatrixT& S) const = 0;
-	virtual void stress_cauchy_small(const MatrixT& F,MatrixT& S,job::type type) const = 0;
+	virtual void stress_cauchy_small(const MatrixT& F,MatrixT& S,job::type type) const
+	{
+		MATRIX(M,type,type);
+		VECTOR(V,type);
+		MatrixT C(boost::numeric::ublas::template zero_matrix<value_type>(3,3));
+		kinematics::strains::right::cauchy_green(F,C);
+		Vector E = vector_from_matrix<type>(C);
+		MATRIX(A,type,type);
+		elasticity_matrix(A,type);
+		Vector Stress = prod(A,E);
+		S = matrix_from_vector<type>(Stress);
+	}
+
 	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const = 0;
-	virtual void elasticity_matrix(Matrix& C,job::type type) const = 0;
+	// C - output, F - graddef - input
+	virtual void elasticity_matrix(Matrix& C,const Matrix& F,job::type type) const = 0;
 	
 
 	virtual ~constitutive_equation_base(){}
@@ -192,15 +241,6 @@ public:
 #endif
 	}
 
-	virtual void stress_cauchy_small(const MatrixT& F,MatrixT& S,job::type type) const
-	{
-		MATRIX(M,type,type);
-		VECTOR(V,type);
-		MatrixT C(boost::numeric::ublas::template zero_matrix<value_type>(3,3));
-		kinematics::strains::right::cauchy_green(F,C);
-
-	}
-
 	virtual void construct_ctensor(Tensor4Rank& c_tensor,const MatrixT& F) const
 	{
 		//C_{IJKL} = lambda*delta(IJ)*delta(KL) + 2mu*delta(IK)*delta(JL);
@@ -226,16 +266,16 @@ public:
 									F(i,I)*F(j,J)*F(k,K)*F(l,L);
 					}
 	};
-	virtual void elasticity_matrix(Matrix& C,job::type type) const
+	virtual void elasticity_matrix(Matrix& C,const Matrix& F,job::type type) const
 	{
-		construct_elasticity_matrix<job>(C);
+		construct_elasticity_matrix<job>(C,F);
 	}
 
 protected:
 	template<int>
-	void construct_elasticity_matrix(Matrix& C) const;
+	void construct_elasticity_matrix(Matrix& C,const Matrix& F) const;
 	template<>
-	void construct_elasticity_matrix<job::PlaneStrain>(Matrix& C) const
+	void construct_elasticity_matrix<job::PlaneStrain>(Matrix& C,const Matrix& F) const
 	{
 		value_type l = Parent::const1_;
 		value_type m = Parent::const1_;
@@ -246,7 +286,7 @@ protected:
 										C(2,2) = 2*m;
 	}
 	template<>
-	void construct_elasticity_matrix<job::Axisymmetric>(Matrix& C) const
+	void construct_elasticity_matrix<job::Axisymmetric>(Matrix& C,const Matrix& F) const
 	{
 		value_type l = Parent::const1_;
 		value_type m = Parent::const1_;	
@@ -258,7 +298,7 @@ protected:
 														C(3,3) = 2*m;
 	}
 	template<>
-	void construct_elasticity_matrix<job::ThreeDimension>(Matrix& C) const
+	void construct_elasticity_matrix<job::ThreeDimension>(Matrix& C,const Matrix& F) const
 	{
 		C.clear();
 		C.resize(job::three_dimension::Voigt,job::plane_strain::Voigt);
