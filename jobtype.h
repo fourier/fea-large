@@ -12,21 +12,21 @@ namespace job
 		{
 			Voigt = 3
 		};
-	};
+	}
 	namespace axisymmetric
 	{
 		enum
 		{
 			Voigt = 4
 		};
-	};
+	}
 	namespace three_dimension
 	{
 		enum
 		{
 			Voigt = 6
 		};
-	};
+	}
 
 	// enum for easy switching btw models
 	enum type
@@ -36,6 +36,6 @@ namespace job
 		ThreeDimension = job::three_dimension::Voigt
 	};
 
-};
+}
 
 #endif // __JOBTYPE_H__

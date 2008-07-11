@@ -74,15 +74,15 @@ void solver_command::execute(solver_command::TMethod method)
 
 	get_values();
 
-	int loads = variables_["loads"];
-	int newton = variables_["newton"];
-	double tolerance = variables_["tolerance"];
-	int searches = variables_["searches"];
-	double max_tolerance = variables_["max_tolerance"];
-	double mu = variables_["mu"] ;
-	double lambda = variables_["lambda"];
-	double nu = variables_["nu"];
-	double E = variables_["E"];
+	size_type loads = (size_type)variables_["loads"];
+	size_type newton = (size_type)variables_["newton"];
+	value_type tolerance = variables_["tolerance"];
+	size_type searches = (size_type)variables_["searches"];
+	value_type max_tolerance = variables_["max_tolerance"];
+	value_type mu = variables_["mu"] ;
+	value_type lambda = variables_["lambda"];
+	value_type nu = variables_["nu"];
+	value_type E = variables_["E"];
 	std::string input = string_variables_["input"];
 	std::string output = string_variables_["output"];
 	std::string model_type = string_variables_["model"];

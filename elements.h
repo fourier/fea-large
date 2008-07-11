@@ -171,8 +171,8 @@ public:
 protected:
 }; 
 
-}; // namespace triangle
-}; // namespace axisymmetric
+} // namespace triangle
+} // namespace axisymmetric
 
 
 namespace plane
@@ -327,8 +327,8 @@ protected:
 }; 
 
 
-}; // namespace triangle
-}; // namespace plane
+} // namespace triangle
+} // namespace plane
 
 
 // Tests section

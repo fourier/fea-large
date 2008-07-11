@@ -86,6 +86,6 @@ inline bool inv3x3(const MatrixT& a, MatrixT& inv)
 	inv(2,1) = (a(0,1)*a(2,0)-a(0,0)*a(2,1))/det;
 	inv(2,2) = (a(0,0)*a(1,1)-a(0,1)*a(1,0))/det;
 	return true;
-};
+}
 
 #endif // __FUNCTIONS_H__

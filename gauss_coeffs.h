@@ -36,6 +36,6 @@ namespace triangle
 	// 7 Gauss integration points - center of the triangle, 3 nodes - corners of "small"
 	// internal triangle, 3 nodes - centers of sides of "small" internal triangle
 	typedef gauss_coeffs<3,7> gauss_tri7p;
-};
+}
 
 #endif // __GAUSS_COEFFS_H__

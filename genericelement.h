@@ -63,7 +63,7 @@ public:
 	{
 		DofNumber = DoF,
 		NodesNumber = NodesN,
-		VoigtNumber = VoigtSize,
+		VoigtNumber = VoigtSize
 	};
 public:
 	typedef element<NodesN,DoF,VoigtSize,GaussNodes> SelfT;
