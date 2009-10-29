@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include <pcre.h>
+/* #include <pcre.h> */
 
 /*************************************************************/
 /* Type definitions                                          */
@@ -15,7 +15,16 @@ typedef double real;
 
 enum task_type { /* PLANE_STRESS, PLANE_STRAIN, AXISYMMETRIC,  */CARTESIAN3D};
 enum element_type { /* TRIANGLE3, TRIANGLE6,TETRAHEDRA4, */TETRAHEDRA10 };
-
+enum prescribed_boundary_type {
+  FREE = 0,                    /* free */
+  PRESCRIBEDX = 1,             /* x prescribed */
+  PRESCRIBEDY = 2,             /* y prescribed */
+  PRESCRIBEDXY = 3,            /* x, y prescribed */
+  PRESCRIBEDZ = 4,             /* z prescribed*/
+  PRESCRIBEDXZ = 5,            /* x, z prescribed*/
+  PRESCRIBEDYZ = 6,            /* y, z prescribed*/
+  PRESCRIBEDXYZ = 7            /* x, y, z prescribed.*/
+}
 /*
  * Task type declaration.
  * Defines an input parameters for the task, independent of 
@@ -29,6 +38,7 @@ typedef struct fea_task_tag {
   real desired_tolerance;       /* desired energy tolerance */
   int linesearch_max;           /* maximum number of line searches */
   BOOL modified_newton;         /* use modified Newton's method or not */
+
 } fea_task;
 
 
@@ -51,7 +61,24 @@ typedef struct nodes_array_tag {
 
 /* An array of elements */
 typedef struct elements_array_tag {
+  int elements_count;           /* number of elements */
+  int **elements;               /* elements array, each line represents an
+                                 * element. Element is an array of node
+                                 * indexes
+                                 */
 };
+
+/* Particular prescribed boundary node */
+typedef struct prescibed_boundary_node_tag {
+  int node_number;
+  real values[3];
+  prescribed_boundary_type type;
+} prescibed_boundary_node;
+/* An array of prescribed boundary conditions */
+typedef struct prescribed_boundary_array_tag {
+  int prescribed_number;
+  prescibed_boundary_node *prescribed_nodes;
+} prescribed_boundary_array;
 
 
 /*
