@@ -32,7 +32,7 @@ typedef enum task_type_enum {
 
 typedef enum model_type_enum {
   MODEL_A5,
-  MODEL_COMPRESSIBLE_NEOHOOKEAN,
+  MODEL_COMPRESSIBLE_NEOHOOKEAN
 } model_type;
   
 typedef enum element_type_enum {
@@ -577,7 +577,7 @@ typedef enum xml_format_tags_enum {
   PRESC_X,
   PRESC_Y,
   PRESC_Z,
-  PRESC_TYPE,
+  PRESC_TYPE
 } xml_format_tags;
 
 static xml_format_tags tagname_to_enum(const XML_Char* name)

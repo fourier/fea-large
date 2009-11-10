@@ -2,7 +2,7 @@
 
 CC = gcc
 EXPAT_ROOT = /Users/alexey/Sources/expat-2.0.1
-CFLAGS = -O3 -g -ansi -Wall -DUSE_EXPAT
+CFLAGS = -O3 -g -ansi -Wall -pedantic -DUSE_EXPAT
 INCLUDES = -I $(EXPAT_ROOT)/lib
 LINKFLAGS =  $(EXPAT_ROOT)/.libs/libexpat.a
 objects = fea_solver.o
