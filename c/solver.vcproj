@@ -66,7 +66,7 @@
 				Name="VCLinkerTool"
 				AdditionalDependencies="libexpatMT.lib "
 				LinkIncremental="2"
-				AdditionalLibraryDirectories="C:\myprojects\expat2.0.1\Source\win32\bin\debug\ "
+				AdditionalLibraryDirectories="C:\myprojects\expat2.0.1\Bin\;C:\myprojects\expat2.0.1\Source\win32\bin\debug\"
 				GenerateDebugInformation="true"
 				SubSystem="1"
 				TargetMachine="1"
