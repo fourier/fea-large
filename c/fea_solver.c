@@ -1,16 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #ifdef USE_EXPAT
 #include <expat.h>
 #endif
 
-/*************************************************************/
-/* Constants                                                 */
-#define READ_BUF_SIZE 10000
+
+
 
 /*************************************************************/
-/* Type definitions                                          */
+/* Type and constants definitions                            */
 
 /* BOOL type as usual */
 typedef int BOOL;
@@ -18,17 +18,25 @@ typedef int BOOL;
 #define TRUE 1
 
 #define MAX_DOF 3
+#define MAX_MATERIAL_PARAMETERS 10
 
 /* Redefine type of the floating point values */
 typedef double real;
 
 typedef enum task_type_enum {
   /* PLANE_STRESS, PLANE_STRAIN, AXISYMMETRIC,  */
-  CARTESIAN3D } task_type;
+  CARTESIAN3D
+} task_type;
 
+typedef enum model_type_enum {
+  MODEL_A5,
+  MODEL_COMPRESSIBLE_NEOHOOKEAN,
+} model_type;
+  
 typedef enum element_type_enum {
   /* TRIANGLE3, TRIANGLE6,TETRAHEDRA4, */
-  TETRAHEDRA10 } element_type;
+  TETRAHEDRA10
+} element_type;
 
 typedef enum prescribed_boundary_type_enum {
   FREE = 0,                    /* free */
@@ -41,7 +49,13 @@ typedef enum prescribed_boundary_type_enum {
   PRESCRIBEDXYZ = 7            /* x, y, z prescribed.*/
 } prescribed_boundary_type;
 
-		
+
+typedef struct fea_material_model_tag {
+  model_type model;                         /* model type */
+  real parameters[MAX_MATERIAL_PARAMETERS]; /* model material parameters */
+  int parameters_count;                     /* number of material parameters */
+} fea_model;
+
 /*
  * Task type declaration.
  * Defines an input parameters for the task, independent of 
@@ -49,6 +63,7 @@ typedef enum prescribed_boundary_type_enum {
  */
 typedef struct fea_task_tag {
   task_type type;               /* type of the task to solve */
+  fea_model model;              /* material model */
   unsigned char dof;            /* number of degree of freedom */
   element_type ele_type;        /* type of the element */
   int load_increments_count;    /* number of load increments */
@@ -74,7 +89,7 @@ typedef struct fea_solution_params_tag {
 /* An array of nodes. */
 typedef struct nodes_array_tag {
   int nodes_count;              /* number of input nodes */
-  real **nodes;                 /* nodes array,sized as nodes_count x dof
+  real **nodes;         /* nodes array,sized as nodes_count x MAX_DOF
                                  * so access is  nodes[node_number][dof] */
 } nodes_array;
 
@@ -176,8 +191,40 @@ real df_dt(int i, real r, real s, real t);
 
 
 /*************************************************************/
+/* Allocators for internal data structures                   */
+
+/* Initializa fea task structure and fill with default values */
+static fea_task* initialize_fea_task();
+/* Initializes fea solution params with default values */
+static fea_solution_params* initialize_fea_solution_params();
+/* Initialize nodes array but not initialize particular arrays  */
+static nodes_array* initialize_nodes_array();
+/* Initialize elements array but not initialize particular elements */
+static elements_array* initialize_elements_array();
+/* Initialize boundary nodes array but not initialize particular nodes */
+static prescribed_boundary_array* initialize_prescribed_boundary_array();
+
+/*************************************************************/
+/* Deallocators for internal data structures                 */
+
+static void free_fea_solution_params(fea_solution_params* params);
+static void free_fea_task(fea_task* task);
+static void free_nodes_array(nodes_array* nodes);
+static void free_elements_array(elements_array *elements);
+static void free_prescribed_boundary_array(prescribed_boundary_array* presc);
+
+
+/*************************************************************/
 /* Global variables                                          */
 
+
+void solve( fea_task *task,
+            fea_solution_params *fea_params,
+            nodes_array *nodes,
+            elements_array *elements,
+            prescribed_boundary_array *presc_boundary)
+{
+}
 
 int parse_cmdargs(int argc, char **argv,char **filename)
 {
@@ -192,18 +239,31 @@ int parse_cmdargs(int argc, char **argv,char **filename)
 
 int do_main(char* filename)
 {
+  /* initialize variables */
   int result = 0;
   fea_task *task;
   fea_solution_params *fea_params;
   nodes_array *nodes;
   elements_array *elements;
   prescribed_boundary_array *presc_boundary;
-  
+
+  /* load geometry and solution details */
   if(!initial_data_load(filename,&task,&fea_params,&nodes,&elements,&presc_boundary))
   {
     printf("Error. Unable to load %s.\n",filename);
     result = 1;
   }
+
+  /* solve task */
+  solve(task, fea_params, nodes, elements, presc_boundary);
+  
+  /* deallocate resources */      
+  free_fea_task(task);
+  free_fea_solution_params(fea_params);
+  free_nodes_array(nodes);
+  free_elements_array(elements);
+  free_prescribed_boundary_array(presc_boundary);
+  
   return result;
 }
 
@@ -311,7 +371,7 @@ real df_dt(int i, real r, real s, real t)
   return 0;
 }
 
-/* Initializa fea task structure and fill with default values */
+
 static fea_task* initialize_fea_task()
 {
   /* allocate memory */
@@ -325,13 +385,16 @@ static fea_task* initialize_fea_task()
   task->load_increments_count = 0;
   task->type = CARTESIAN3D;
   task->modified_newton = TRUE;
+  task->model.model = MODEL_A5;
+  task->model.parameters_count = 2;
+  task->model.parameters[0] = 100;
+  task->model.parameters[1] = 100;
   return task;
 }
 
 static void free_fea_task(fea_task* task)
 {
-  /* TODO: implement this */
-
+  free(task);
 }
 
 /* Initializes fea solution params with default values */
@@ -347,6 +410,11 @@ static fea_solution_params* initialize_fea_solution_params()
   return fea_params;
 }
 
+/* clear fea solution params */
+static void free_fea_solution_params(fea_solution_params* params)
+{
+  free(params);
+}
 
 /* Initialize nodes array but not initialize particular arrays  */
 static nodes_array* initialize_nodes_array()
@@ -354,14 +422,22 @@ static nodes_array* initialize_nodes_array()
   /* allocate memory */
   nodes_array *nodes = (nodes_array*)malloc(sizeof(nodes_array));
   /* set zero values */
-  nodes->nodes = (void*)0;
+  nodes->nodes = (real**)0;
   nodes->nodes_count = 0;
   return nodes;
 }
 
-static void free_nodes_array(nodes_array* array)
+/* carefully deallocate nodes array */
+static void free_nodes_array(nodes_array* nodes)
 {
-  /* TODO: implement this */
+  int counter = 0;
+  if (nodes->nodes_count && nodes->nodes)
+  {
+    for (; counter < nodes->nodes_count; ++ counter)
+      free(nodes->nodes[counter]);
+    free(nodes->nodes);
+  }
+  free(nodes);
 }
 
 
@@ -376,9 +452,16 @@ static elements_array* initialize_elements_array()
   return elements;
 }
 
-static free_elements_array(elements_array *elements)
+static void free_elements_array(elements_array *elements)
 {
-  /* TODO: implement this */
+  int counter = 0;
+  if (elements->elements_count && elements->elements)
+  {
+    for (; counter < elements->elements_count; ++ counter)
+      free(elements->elements[counter]);
+    free(elements->elements);
+  }
+  free(elements);
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
@@ -393,13 +476,54 @@ static prescribed_boundary_array* initialize_prescribed_boundary_array()
   return presc_boundary;
 }
 
-static free_prescribed_boundary_array(prescribed_boundary_array* presc)
+static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
 {
-  /* TODO: implement this */
+  if (presc->prescribed_nodes_count && presc->prescribed_nodes)
+  {
+    free(presc->prescribed_nodes);
+  }
+  free(presc);
 }
 
 
 #ifdef USE_EXPAT
+
+#define INDEX_STACK_SIZE 5
+
+typedef struct index_stack_tag {
+  int storage[INDEX_STACK_SIZE];
+  int level;
+} index_stack;
+
+void index_stack_init(index_stack* stack)
+{
+  memset(&stack->storage,0,sizeof(stack->storage));
+  /* stack->level = -1 means no elements in stack */
+  stack->level = -1;
+}
+  
+BOOL index_stack_pop(index_stack* stack, int* value)
+{
+  if (stack->level == -1)
+    return FALSE;
+  *value = stack->storage[stack->level--];
+  return TRUE;
+}
+
+void index_stack_push(index_stack* stack, int value)
+{
+  if (stack->level == sizeof(stack->storage)/sizeof(int))
+  {
+    stack->level = 0;
+    stack->storage[0] = value;
+  }
+  else
+  {
+    stack->storage[++stack->level] = value;
+  }
+}
+
+
 
 typedef enum xml_format_tags_enum {
   UNKNOWN_TAG,
@@ -407,8 +531,6 @@ typedef enum xml_format_tags_enum {
   MODEL,
   MODEL_TYPE,
   MODEL_PARAMETERS,
-  LAMBDA,
-  MU,
   SOLUTION,
   MODIFIED_NEWTON,
   TASK_TYPE,
@@ -423,15 +545,18 @@ typedef enum xml_format_tags_enum {
   INPUT_DATA,
   GEOMETRY,
   NODES,
+  NODES_COUNT,
   NODE,
   X,
   Y,
   Z,
   ELEMENTS,
+  ELEMENTS_COUNT,
   ELEMENT,
   NODE_ID,
   BOUNDARY_CONDITIONS,
   PRESCRIBED_DISPLACEMENTS,
+  PRESCRIBED_COUNT,
   PRESC_NODE,
   PRESC_ID,
   PRESC_X,
@@ -440,43 +565,80 @@ typedef enum xml_format_tags_enum {
   PRESC_TYPE,
 } xml_format_tags;
 
-enum xml_format_tags tagname_to_enum(const XML_Char* name)
+static enum xml_format_tags tagname_to_enum(const XML_Char* name)
 {
-  if (!strcmp(name,"task")) return TASK;
-  if (!strcmp(name,"model")) return MODEL;
-  if (!strcmp(name,"model_type")) return MODEL_TYPE;
-  if (!strcmp(name,"model_parameters")) return MODEL_PARAMETERS;
-  if (!strcmp(name,"lambda")) return LAMBDA;
-  if (!strcmp(name,"mu")) return MU;
-  if (!strcmp(name,"solution")) return SOLUTION;
-  if (!strcmp(name,"modified_newton")) return MODIFIED_NEWTON;
-  if (!strcmp(name,"task_type")) return TASK_TYPE;
-  if (!strcmp(name,"element_type")) return ELEMENT_TYPE;
-  if (!strcmp(name,"gauss_nodes_count")) return GAUSS_NODES_COUNT;
-  if (!strcmp(name,"load_increments_count")) return LOAD_INCREMENTS_COUNT;
-  if (!strcmp(name,"desired_tolerance")) return DESIRED_TOLERANCE;
-  if (!strcmp(name,"line_search")) return LINE_SEARCH;
-  if (!strcmp(name,"line_search_max")) return LINE_SEARCH_MAX;
-  if (!strcmp(name,"arc_length")) return ARC_LENGTH;
-  if (!strcmp(name,"arc_length_max")) return ARC_LENGTH_MAX;
-  if (!strcmp(name,"input_data")) return INPUT_DATA;
-  if (!strcmp(name,"geometry")) return GEOMETRY;
-  if (!strcmp(name,"nodes")) return NODES;
-  if (!strcmp(name,"node")) return NODE;
-  if (!strcmp(name,"x")) return X;
-  if (!strcmp(name,"y")) return Y;
-  if (!strcmp(name,"z")) return Z;
-  if (!strcmp(name,"elements")) return ELEMENTS;
-  if (!strcmp(name,"element")) return ELEMENT;
-  if (!strcmp(name,"node_id")) return NODE_ID;
-  if (!strcmp(name,"boundary_conditions")) return BOUNDARY_CONDITIONS;
-  if (!strcmp(name,"prescribed_displacements")) return PRESCRIBED_DISPLACEMENTS;
-  if (!strcmp(name,"presc_node")) return PRESC_NODE;
-  if (!strcmp(name,"presc_id")) return PRESC_ID;
-  if (!strcmp(name,"presc_x")) return PRESC_X;
-  if (!strcmp(name,"presc_y")) return PRESC_Y;
-  if (!strcmp(name,"presc_z")) return PRESC_Z;
-  if (!strcmp(name,"presc_type")) return PRESC_TYPE;
+  if (!strcmp(name,"task") ||
+      !strcmp(name,"TASK")) return TASK;
+  if (!strcmp(name,"model") ||
+      !strcmp(name,"MODEL")) return MODEL;
+  if (!strcmp(name,"model-type") ||
+      !strcmp(name,"MODEL-TYPE")) return MODEL_TYPE;
+  if (!strcmp(name,"model-parameters") ||
+      !strcmp(name,"MODEL-PARAMETERS")) return MODEL_PARAMETERS;
+  if (!strcmp(name,"solution") ||
+      !strcmp(name,"SOLUTION")) return SOLUTION;
+  if (!strcmp(name,"modified-newton") ||
+      !strcmp(name,"MODIFIED-NEWTON")) return MODIFIED_NEWTON;
+  if (!strcmp(name,"task-type") ||
+      !strcmp(name,"TASK-TYPE")) return TASK_TYPE;
+  if (!strcmp(name,"element-type") ||
+      !strcmp(name,"ELEMENT-TYPE")) return ELEMENT_TYPE;
+  if (!strcmp(name,"gauss-nodes-count") ||
+      !strcmp(name,"GAUSS-NODES-COUNT")) return GAUSS_NODES_COUNT;
+  if (!strcmp(name,"load-increments-count") ||
+      !strcmp(name,"LOAD-INCREMENTS-COUNT")) return LOAD_INCREMENTS_COUNT;
+  if (!strcmp(name,"desired-tolerance") ||
+      !strcmp(name,"DESIRED-TOLERANCE")) return DESIRED_TOLERANCE;
+  if (!strcmp(name,"line-search") ||
+      !strcmp(name,"LINE-SEARCH")) return LINE_SEARCH;
+  if (!strcmp(name,"line-search-max") ||
+      !strcmp(name,"LINE-SEARCH-MAX")) return LINE_SEARCH_MAX;
+  if (!strcmp(name,"arc-length") ||
+      !strcmp(name,"ARC-LENGTH")) return ARC_LENGTH;
+  if (!strcmp(name,"arc-length-max") ||
+      !strcmp(name,"ARC-LENGTH-MAX")) return ARC_LENGTH_MAX;
+  if (!strcmp(name,"input-data") ||
+      !strcmp(name,"INPUT-DATA")) return INPUT_DATA;
+  if (!strcmp(name,"geometry") ||
+      !strcmp(name,"GEOMETRY")) return GEOMETRY;
+  if (!strcmp(name,"nodes") ||
+      !strcmp(name,"NODES")) return NODES;
+  if (!strcmp(name,"nodes-count") ||
+      !strcmp(name,"NODES-COUNT")) return NODES_COUNT;
+  if (!strcmp(name,"node") ||
+      !strcmp(name,"NODE")) return NODE;
+  if (!strcmp(name,"x") ||
+      !strcmp(name,"X")) return X;
+  if (!strcmp(name,"y") ||
+      !strcmp(name,"Y")) return Y;
+  if (!strcmp(name,"z") ||
+      !strcmp(name,"Z")) return Z;
+  if (!strcmp(name,"elements") ||
+      !strcmp(name,"ELEMENTS")) return ELEMENTS;
+  if (!strcmp(name,"elements-count") ||
+      !strcmp(name,"ELEMENTS-COUNT")) return ELEMENTS_COUNT;
+  if (!strcmp(name,"element") ||
+      !strcmp(name,"ELEMENT")) return ELEMENT;
+  if (!strcmp(name,"node-id") ||
+      !strcmp(name,"NODE-ID")) return NODE_ID;
+  if (!strcmp(name,"boundary-conditions") ||
+      !strcmp(name,"BOUNDARY-CONDITIONS")) return BOUNDARY_CONDITIONS;
+  if (!strcmp(name,"prescribed-displacements") ||
+      !strcmp(name,"PRESCRIBED-DISPLACEMENTS")) return PRESCRIBED_DISPLACEMENTS;
+  if (!strcmp(name,"prescribed-count") ||
+      !strcmp(name,"PRESCRIBED-COUNT")) return PRESCRIBED_COUNT;
+  if (!strcmp(name,"presc-node") ||
+      !strcmp(name,"PRESC-NODE")) return PRESC_NODE;
+  if (!strcmp(name,"presc-id") ||
+      !strcmp(name,"PRESC-ID")) return PRESC_ID;
+  if (!strcmp(name,"presc-x") ||
+      !strcmp(name,"PRESC-X")) return PRESC_X;
+  if (!strcmp(name,"presc-y") ||
+      !strcmp(name,"PRESC-Y")) return PRESC_Y;
+  if (!strcmp(name,"presc-z") ||
+      !strcmp(name,"PRESC-Z")) return PRESC_Z;
+  if (!strcmp(name,"presc-type") ||
+      !strcmp(name,"PRESC-TYPE")) return PRESC_TYPE;
   return UNKNOWN_TAG;
 }
 
@@ -487,29 +649,59 @@ typedef struct parse_data_tag {
   nodes_array *nodes;
   elements_array *elements;
   prescribed_boundary_array *presc_boundary;
-  xml_format_tags last_tag;
+  index_stack stack;
+  enum xml_format_tags parent_tag;
   char* current_text;
   int current_size;
 } parse_data;
 
 
+/*
+ * Remove leading and trailing whitespaces from the string,
+ * allocating null-terminated string as a result
+ */
+char *trim_whitespaces(char* string,size_t size)
+{
+  char* begin = string;
+  char* end = string+size;
+  char* result = (char*)0;
+  int not_ws_start = 0;
+  int not_ws_end = 0;
+  char* ptr = string;
+  /* find starting non-whitespace character */
+  while( --size && isspace(*ptr++)) not_ws_start++;
+  if (size != 0/* && ptr != end*/)
+  {
+    ptr--;
+    /* find trailing non-whitespace character */
+    while(isspace(*--end) && end != ptr) not_ws_end++;
+    size = end-ptr+1;
+    result = (char*)malloc(size+1);
+    memcpy(result,ptr,size);
+    result[size] = '\0';
+  }
+  return result;
+}
+
+void process_tag(parse_data* data, const XML_Char *tag_name);
+
 void expat_start_tag_handler(void *userData,
                       const XML_Char *name,
                       const XML_Char **atts)
 {
-  parse_data* data = (parse_data*)userData;
-  data->last_tag = tagname_to_enum(name);
-  printf("open: %s\n",name);
+  printf("open tag: %s\n",name);
 }
 
 void expat_end_tag_handler(void *userData,
                    const XML_Char *name)
 {
   parse_data* data = (parse_data*)userData;
-  printf("total text len = %d\n",data->current_size);
+  process_tag(data,name);
+  free(data->current_text);
   data->current_text = (char*)0;
   data->current_size = 0;
-  printf("close %s\n",name);
+  if (name)
+    printf("close %s\n",name);
 }
 
 void expat_text_handler(void *userData,
@@ -518,6 +710,7 @@ void expat_text_handler(void *userData,
 {
   parse_data* data = (parse_data*)userData;
   char *ptr;
+  
   if (!data->current_text)
   {
     data->current_text = (char*)malloc(len);
@@ -525,14 +718,12 @@ void expat_text_handler(void *userData,
   }
   else
   {
-    /* FIXME: after every reallocation data->current_text is another pointer!!!*/
-    ptr = data->current_text;
     data->current_text = (char*)realloc(data->current_text,data->current_size+len);
+    ptr = data->current_text;
     ptr += data->current_size;  
   }
   memcpy(ptr,s,len);
   data->current_size += len;
-  printf("fragment text len = %d\n",len);
 }
 
 
@@ -578,8 +769,6 @@ static BOOL expat_data_load(char *filename,
   /* initialize data */
   parse.current_text = (char*)0;
   parse.current_size = 0;
-  /* TODO: add initialization here */
-  XML_SetUserData(parser,&parse);
 
   /* read whole file */
   file_contents = (char*)malloc(file_size);
@@ -587,16 +776,152 @@ static BOOL expat_data_load(char *filename,
   if (errno)
   {
     free(file_contents);
-    /* deallocate parse data */
     return FALSE;
   }
+
+  /* allocate parse data */
+  parse.task = initialize_fea_task();
+  parse.fea_params = initialize_fea_solution_params();
+  parse.nodes = initialize_nodes_array();
+  parse.elements = initialize_elements_array();
+  parse.presc_boundary = initialize_prescribed_boundary_array();
+  index_stack_init(&parse.stack);
+  parse.current_size = 0;
+  parse.current_text = (char*)0;
+  /* set user data */
+  XML_SetUserData(parser,&parse);  
+
   /* call parser */
   status = XML_Parse(parser,file_contents,(int)read_bytes,1);
   free(file_contents);
+
+  *task = parse.task;
+  *fea_params = parse.fea_params;
+  *nodes = parse.nodes;
+  *elements = parse.elements;
+  *presc_boundary = parse.presc_boundary;
   
+  result = TRUE;
   return result;
 }
 
+
+void process_unknown_tag(parse_data* data, const XML_Char *tag_name)
+{
+  printf("unknown tag name: %s\n",tag_name);
+}
+
+void process_model_type(parse_data* data, const XML_Char *tag_name)
+{
+  char *text = trim_whitespaces(data->current_text,data->current_size);
+  if (!strcmp(text,"A5"))
+  {
+    data->task->model.model = MODEL_A5;
+    data->task->model.parameters_count = 2;
+  }
+  else
+  {
+    /* TODO: add additional model definitions here */
+  }
+  free(text);
+}
+
+void process_model_params(parse_data* data, const XML_Char *tag_name)
+{
+  char *text = trim_whitespaces(data->current_text,data->current_size);
+  free(text);
+}
+
+void process_tag(parse_data* data, const XML_Char *tag_name)
+{
+  int tag = UNKNOWN_TAG;
+  tag = tagname_to_enum(tag_name);
+  switch(tag)
+  {
+  case TASK:
+    break;
+  case MODEL:
+    break;
+  case MODEL_TYPE:
+    process_model_type(data,tag_name);
+    break;
+  case MODEL_PARAMETERS:
+    break;
+  /* case LAMBDA: */
+  /*   process_model_params(data,tag_name); */
+  /*   break; */
+  /* case MU: */
+  /*   process_model_params(data,tag_name); */
+  /*   break; */
+  case SOLUTION:
+    break;
+  case MODIFIED_NEWTON:
+    break;
+  case TASK_TYPE:
+    break;
+  case ELEMENT_TYPE:
+    break;
+  case GAUSS_NODES_COUNT:
+    break;
+  case LOAD_INCREMENTS_COUNT:
+    break;
+  case DESIRED_TOLERANCE:
+    break;
+  case LINE_SEARCH:
+    break;
+  case LINE_SEARCH_MAX:
+    break;
+  case ARC_LENGTH:
+    break;
+  case ARC_LENGTH_MAX:
+    break;
+  case INPUT_DATA:
+    break;
+  case GEOMETRY:
+    break;
+  case NODES:
+    break;
+  case NODES_COUNT:
+    break;
+  case NODE:
+    break;
+  case X:
+    break;
+  case Y:
+    break;
+  case Z:
+    break;
+  case ELEMENTS:
+    break;
+  case ELEMENTS_COUNT:
+    break;
+  case ELEMENT:
+    break;
+  case NODE_ID:
+    break;
+  case BOUNDARY_CONDITIONS:
+    break;
+  case PRESCRIBED_DISPLACEMENTS:
+    break;
+  case PRESCRIBED_COUNT:
+    break;
+  case PRESC_NODE:
+    break;
+  case PRESC_ID:
+    break;
+  case PRESC_X:
+    break;
+  case PRESC_Y:
+    break;
+  case PRESC_Z:
+    break;
+  case PRESC_TYPE:
+    break;
+  default:
+    process_unknown_tag(data,tag_name);
+    break;
+  };
+}
 
 
 #endif
@@ -614,7 +939,6 @@ BOOL initial_data_load(char *filename,
 #ifdef USE_EXPAT
   result = expat_data_load(filename,task,fea_params,nodes,elements,presc_boundary);
 #endif
-  
   return result;
 }
 
