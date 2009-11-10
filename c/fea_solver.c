@@ -7,8 +7,6 @@
 #endif
 
 
-
-
 /*************************************************************/
 /* Type and constants definitions                            */
 
@@ -19,6 +17,10 @@ typedef int BOOL;
 
 #define MAX_DOF 3
 #define MAX_MATERIAL_PARAMETERS 10
+
+/*************************************************************/
+/* Globals                                                   */
+extern int errno;
 
 /* Redefine type of the floating point values */
 typedef double real;
@@ -241,22 +243,26 @@ int do_main(char* filename)
 {
   /* initialize variables */
   int result = 0;
-  fea_task *task;
-  fea_solution_params *fea_params;
-  nodes_array *nodes;
-  elements_array *elements;
-  prescribed_boundary_array *presc_boundary;
+  fea_task *task = (fea_task *)0;
+  fea_solution_params *fea_params = (fea_solution_params*)0;
+  nodes_array *nodes = (nodes_array*)0;
+  elements_array *elements = (elements_array*)0;
+  prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)0;
 
   /* load geometry and solution details */
-  if(!initial_data_load(filename,&task,&fea_params,&nodes,&elements,&presc_boundary))
+  if(!initial_data_load(filename,
+												&task,
+												&fea_params,
+												&nodes,
+												&elements,
+												&presc_boundary))
   {
     printf("Error. Unable to load %s.\n",filename);
     result = 1;
   }
-
+	
   /* solve task */
   solve(task, fea_params, nodes, elements, presc_boundary);
-  
   /* deallocate resources */      
   free_fea_task(task);
   free_fea_solution_params(fea_params);
@@ -274,9 +280,9 @@ int main(int argc, char **argv)
   
   do
   {
-    if ( result = parse_cmdargs(argc, argv,&filename))
+    if ( TRUE == (result = parse_cmdargs(argc, argv,&filename)))
       break;
-    if ( result = do_main(filename))
+    if ( TRUE == (result = do_main(filename)))
       break;
   } while(0);
 
@@ -430,14 +436,17 @@ static nodes_array* initialize_nodes_array()
 /* carefully deallocate nodes array */
 static void free_nodes_array(nodes_array* nodes)
 {
-  int counter = 0;
-  if (nodes->nodes_count && nodes->nodes)
-  {
-    for (; counter < nodes->nodes_count; ++ counter)
-      free(nodes->nodes[counter]);
-    free(nodes->nodes);
-  }
-  free(nodes);
+ 	if (nodes)
+	{
+    int counter = 0;
+    if (nodes->nodes_count && nodes->nodes)
+    {
+      for (; counter < nodes->nodes_count; ++ counter)
+        free(nodes->nodes[counter]);
+      free(nodes->nodes);
+    }
+    free(nodes);
+	}
 }
 
 
@@ -454,14 +463,17 @@ static elements_array* initialize_elements_array()
 
 static void free_elements_array(elements_array *elements)
 {
-  int counter = 0;
-  if (elements->elements_count && elements->elements)
+  if(elements)
   {
-    for (; counter < elements->elements_count; ++ counter)
-      free(elements->elements[counter]);
-    free(elements->elements);
+    int counter = 0;
+    if (elements->elements_count && elements->elements)
+    {
+      for (; counter < elements->elements_count; ++ counter)
+        free(elements->elements[counter]);
+      free(elements->elements);
+    }
+    free(elements);
   }
-  free(elements);
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
@@ -478,11 +490,14 @@ static prescribed_boundary_array* initialize_prescribed_boundary_array()
 
 static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
 {
-  if (presc->prescribed_nodes_count && presc->prescribed_nodes)
+  if (presc)
   {
-    free(presc->prescribed_nodes);
+    if (presc->prescribed_nodes_count && presc->prescribed_nodes)
+    {
+      free(presc->prescribed_nodes);
+    }
+    free(presc);
   }
-  free(presc);
 }
 
 
@@ -565,7 +580,7 @@ typedef enum xml_format_tags_enum {
   PRESC_TYPE,
 } xml_format_tags;
 
-static enum xml_format_tags tagname_to_enum(const XML_Char* name)
+static xml_format_tags tagname_to_enum(const XML_Char* name)
 {
   if (!strcmp(name,"task") ||
       !strcmp(name,"TASK")) return TASK;
@@ -650,7 +665,7 @@ typedef struct parse_data_tag {
   elements_array *elements;
   prescribed_boundary_array *presc_boundary;
   index_stack stack;
-  enum xml_format_tags parent_tag;
+  xml_format_tags parent_tag;
   char* current_text;
   int current_size;
 } parse_data;
@@ -662,7 +677,6 @@ typedef struct parse_data_tag {
  */
 char *trim_whitespaces(char* string,size_t size)
 {
-  char* begin = string;
   char* end = string+size;
   char* result = (char*)0;
   int not_ws_start = 0;
@@ -742,7 +756,6 @@ static BOOL expat_data_load(char *filename,
   parse_data parse;
   enum XML_Status status;
   char *file_contents = (char*)0;
-  char *file_current_position = file_contents;
   
   /* Try to open file */
   if (!(xml_document_file = fopen(filename,"rt")))
