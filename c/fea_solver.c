@@ -500,6 +500,27 @@ static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
   }
 }
 
+int istrcmp(s1,s2)
+     const char *s1, *s2;
+{
+	/* case insensitive comparison */
+	int d;
+	for (;;) {
+#ifdef ASCII_CTYPE
+	  if (!isascii(*s1) || !isascii(*s2))
+	    d = *s1 - *s2;
+	  else
+#endif
+	    d = (tolower((unsigned char) *s1) - tolower((unsigned char)*s2));
+	  if ( d != 0 || *s1 == '\0' || *s2 == '\0' )
+	    return d;
+	  ++s1;
+	  ++s2;
+	}
+	/*NOTREACHED*/
+}
+
+
 
 #ifdef USE_EXPAT
 
@@ -544,116 +565,40 @@ typedef enum xml_format_tags_enum {
   UNKNOWN_TAG,
   TASK,
   MODEL,
-  MODEL_TYPE,
   MODEL_PARAMETERS,
   SOLUTION,
-  MODIFIED_NEWTON,
-  TASK_TYPE,
   ELEMENT_TYPE,
-  GAUSS_NODES_COUNT,
-  LOAD_INCREMENTS_COUNT,
-  DESIRED_TOLERANCE,
   LINE_SEARCH,
-  LINE_SEARCH_MAX,
   ARC_LENGTH,
-  ARC_LENGTH_MAX,
   INPUT_DATA,
   GEOMETRY,
   NODES,
-  NODES_COUNT,
   NODE,
-  X,
-  Y,
-  Z,
   ELEMENTS,
-  ELEMENTS_COUNT,
   ELEMENT,
-  NODE_ID,
   BOUNDARY_CONDITIONS,
   PRESCRIBED_DISPLACEMENTS,
-  PRESCRIBED_COUNT,
-  PRESC_NODE,
-  PRESC_ID,
-  PRESC_X,
-  PRESC_Y,
-  PRESC_Z,
-  PRESC_TYPE
+  PRESC_NODE
 } xml_format_tags;
 
 static xml_format_tags tagname_to_enum(const XML_Char* name)
 {
-  if (!strcmp(name,"task") ||
-      !strcmp(name,"TASK")) return TASK;
-  if (!strcmp(name,"model") ||
-      !strcmp(name,"MODEL")) return MODEL;
-  if (!strcmp(name,"model-type") ||
-      !strcmp(name,"MODEL-TYPE")) return MODEL_TYPE;
-  if (!strcmp(name,"model-parameters") ||
-      !strcmp(name,"MODEL-PARAMETERS")) return MODEL_PARAMETERS;
-  if (!strcmp(name,"solution") ||
-      !strcmp(name,"SOLUTION")) return SOLUTION;
-  if (!strcmp(name,"modified-newton") ||
-      !strcmp(name,"MODIFIED-NEWTON")) return MODIFIED_NEWTON;
-  if (!strcmp(name,"task-type") ||
-      !strcmp(name,"TASK-TYPE")) return TASK_TYPE;
-  if (!strcmp(name,"element-type") ||
-      !strcmp(name,"ELEMENT-TYPE")) return ELEMENT_TYPE;
-  if (!strcmp(name,"gauss-nodes-count") ||
-      !strcmp(name,"GAUSS-NODES-COUNT")) return GAUSS_NODES_COUNT;
-  if (!strcmp(name,"load-increments-count") ||
-      !strcmp(name,"LOAD-INCREMENTS-COUNT")) return LOAD_INCREMENTS_COUNT;
-  if (!strcmp(name,"desired-tolerance") ||
-      !strcmp(name,"DESIRED-TOLERANCE")) return DESIRED_TOLERANCE;
-  if (!strcmp(name,"line-search") ||
-      !strcmp(name,"LINE-SEARCH")) return LINE_SEARCH;
-  if (!strcmp(name,"line-search-max") ||
-      !strcmp(name,"LINE-SEARCH-MAX")) return LINE_SEARCH_MAX;
-  if (!strcmp(name,"arc-length") ||
-      !strcmp(name,"ARC-LENGTH")) return ARC_LENGTH;
-  if (!strcmp(name,"arc-length-max") ||
-      !strcmp(name,"ARC-LENGTH-MAX")) return ARC_LENGTH_MAX;
-  if (!strcmp(name,"input-data") ||
-      !strcmp(name,"INPUT-DATA")) return INPUT_DATA;
-  if (!strcmp(name,"geometry") ||
-      !strcmp(name,"GEOMETRY")) return GEOMETRY;
-  if (!strcmp(name,"nodes") ||
-      !strcmp(name,"NODES")) return NODES;
-  if (!strcmp(name,"nodes-count") ||
-      !strcmp(name,"NODES-COUNT")) return NODES_COUNT;
-  if (!strcmp(name,"node") ||
-      !strcmp(name,"NODE")) return NODE;
-  if (!strcmp(name,"x") ||
-      !strcmp(name,"X")) return X;
-  if (!strcmp(name,"y") ||
-      !strcmp(name,"Y")) return Y;
-  if (!strcmp(name,"z") ||
-      !strcmp(name,"Z")) return Z;
-  if (!strcmp(name,"elements") ||
-      !strcmp(name,"ELEMENTS")) return ELEMENTS;
-  if (!strcmp(name,"elements-count") ||
-      !strcmp(name,"ELEMENTS-COUNT")) return ELEMENTS_COUNT;
-  if (!strcmp(name,"element") ||
-      !strcmp(name,"ELEMENT")) return ELEMENT;
-  if (!strcmp(name,"node-id") ||
-      !strcmp(name,"NODE-ID")) return NODE_ID;
-  if (!strcmp(name,"boundary-conditions") ||
-      !strcmp(name,"BOUNDARY-CONDITIONS")) return BOUNDARY_CONDITIONS;
-  if (!strcmp(name,"prescribed-displacements") ||
-      !strcmp(name,"PRESCRIBED-DISPLACEMENTS")) return PRESCRIBED_DISPLACEMENTS;
-  if (!strcmp(name,"prescribed-count") ||
-      !strcmp(name,"PRESCRIBED-COUNT")) return PRESCRIBED_COUNT;
-  if (!strcmp(name,"presc-node") ||
-      !strcmp(name,"PRESC-NODE")) return PRESC_NODE;
-  if (!strcmp(name,"presc-id") ||
-      !strcmp(name,"PRESC-ID")) return PRESC_ID;
-  if (!strcmp(name,"presc-x") ||
-      !strcmp(name,"PRESC-X")) return PRESC_X;
-  if (!strcmp(name,"presc-y") ||
-      !strcmp(name,"PRESC-Y")) return PRESC_Y;
-  if (!strcmp(name,"presc-z") ||
-      !strcmp(name,"PRESC-Z")) return PRESC_Z;
-  if (!strcmp(name,"presc-type") ||
-      !strcmp(name,"PRESC-TYPE")) return PRESC_TYPE;
+  if (!istrcmp(name,"TASK")) return TASK;
+  if (!istrcmp(name,"MODEL")) return MODEL;
+  if (!istrcmp(name,"MODEL-PARAMETERS")) return MODEL_PARAMETERS;
+  if (!istrcmp(name,"SOLUTION")) return SOLUTION;
+  if (!istrcmp(name,"ELEMENT-TYPE")) return ELEMENT_TYPE;
+  if (!istrcmp(name,"LINE-SEARCH")) return LINE_SEARCH;
+  if (!istrcmp(name,"ARC-LENGTH")) return ARC_LENGTH;
+  if (!istrcmp(name,"INPUT-DATA")) return INPUT_DATA;
+  if (!istrcmp(name,"GEOMETRY")) return GEOMETRY;
+  if (!istrcmp(name,"NODES")) return NODES;
+  if (!istrcmp(name,"NODE")) return NODE;
+  if (!istrcmp(name,"ELEMENTS")) return ELEMENTS;
+  if (!istrcmp(name,"ELEMENT")) return ELEMENT;
+  if (!istrcmp(name,"BOUNDARY-CONDITIONS")) return BOUNDARY_CONDITIONS;
+  if (!istrcmp(name,"PRESCRIBED-DISPLACEMENTS")) return PRESCRIBED_DISPLACEMENTS;
+  if (!istrcmp(name,"PRESC-NODE")) return PRESC_NODE;
   return UNKNOWN_TAG;
 }
 
@@ -675,13 +620,13 @@ typedef struct parse_data_tag {
  * Remove leading and trailing whitespaces from the string,
  * allocating null-terminated string as a result
  */
-char *trim_whitespaces(char* string,size_t size)
+char *trim_whitespaces(const char* string,size_t size)
 {
-  char* end = string+size;
+  const char* end = string+size;
   char* result = (char*)0;
   int not_ws_start = 0;
   int not_ws_end = 0;
-  char* ptr = string;
+  const char* ptr = string;
   /* find starting non-whitespace character */
   while( --size && isspace(*ptr++)) not_ws_start++;
   if (size != 0/* && ptr != end*/)
@@ -697,25 +642,33 @@ char *trim_whitespaces(char* string,size_t size)
   return result;
 }
 
-void process_tag(parse_data* data, const XML_Char *tag_name);
+void process_begin_tag(parse_data* data, int tag,const XML_Char **atts);
+void process_end_tag(parse_data* data, int tag);
+
+
 
 void expat_start_tag_handler(void *userData,
                       const XML_Char *name,
                       const XML_Char **atts)
 {
-  printf("open tag: %s\n",name);
+  parse_data* data = (parse_data*)userData;
+  int tag = tagname_to_enum(name);
+  if(tag != UNKNOWN_TAG)
+    process_begin_tag(data,tag,atts);
 }
 
 void expat_end_tag_handler(void *userData,
                    const XML_Char *name)
 {
   parse_data* data = (parse_data*)userData;
-  process_tag(data,name);
+  int tag = tagname_to_enum(name);
+
+  if (tag != UNKNOWN_TAG)
+    process_end_tag(data,tag);
+  
   free(data->current_text);
   data->current_text = (char*)0;
   data->current_size = 0;
-  if (name)
-    printf("close %s\n",name);
 }
 
 void expat_text_handler(void *userData,
@@ -819,74 +772,73 @@ static BOOL expat_data_load(char *filename,
 }
 
 
-void process_unknown_tag(parse_data* data, const XML_Char *tag_name)
-{
-  printf("unknown tag name: %s\n",tag_name);
-}
 
-void process_model_type(parse_data* data, const XML_Char *tag_name)
+BOOL check_attribute(const char* attribute_name, const XML_Char ***atts)
 {
-  char *text = trim_whitespaces(data->current_text,data->current_size);
-  if (!strcmp(text,"A5"))
+  BOOL result = FALSE;
+  if(!istrcmp(**atts,attribute_name))
   {
-    data->task->model.model = MODEL_A5;
-    data->task->model.parameters_count = 2;
+    (*atts)++;
+    result = TRUE;
   }
-  else
+  return result;
+}
+
+void process_model_type(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  for (; *atts; atts++ )
   {
-    /* TODO: add additional model definitions here */
+    if (check_attribute("name",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      if (!istrcmp(text,"A5")) 
+      {
+        data->task->model.model = MODEL_A5;
+        data->task->model.parameters_count = 2;
+      }
+      else
+      {
+        printf("unknown model type %s\n",text);
+      }
+      free(text);
+    }
   }
-  free(text);
 }
 
-void process_model_params(parse_data* data, const XML_Char *tag_name)
+void process_model_params(parse_data* data, const XML_Char **atts)
 {
-  char *text = trim_whitespaces(data->current_text,data->current_size);
-  free(text);
+  char* text = (char*)0;
+  int count = 0;
+  for (; *atts && count < data->task->model.parameters_count; atts++ )
+  {
+    atts++;
+    text = trim_whitespaces(*atts,strlen(*atts));
+    data->task->model.parameters[count] = atof(text);
+    free(text);
+    count++;
+  }
 }
 
-void process_tag(parse_data* data, const XML_Char *tag_name)
+void process_begin_tag(parse_data* data, int tag,const XML_Char **atts)
 {
-  int tag = UNKNOWN_TAG;
-  tag = tagname_to_enum(tag_name);
   switch(tag)
   {
   case TASK:
     break;
   case MODEL:
-    break;
-  case MODEL_TYPE:
-    process_model_type(data,tag_name);
+    process_model_type(data,atts);
     break;
   case MODEL_PARAMETERS:
+    process_model_params(data,atts);
     break;
-  /* case LAMBDA: */
-  /*   process_model_params(data,tag_name); */
-  /*   break; */
-  /* case MU: */
-  /*   process_model_params(data,tag_name); */
-  /*   break; */
   case SOLUTION:
-    break;
-  case MODIFIED_NEWTON:
-    break;
-  case TASK_TYPE:
     break;
   case ELEMENT_TYPE:
     break;
-  case GAUSS_NODES_COUNT:
-    break;
-  case LOAD_INCREMENTS_COUNT:
-    break;
-  case DESIRED_TOLERANCE:
-    break;
   case LINE_SEARCH:
     break;
-  case LINE_SEARCH_MAX:
-    break;
   case ARC_LENGTH:
-    break;
-  case ARC_LENGTH_MAX:
     break;
   case INPUT_DATA:
     break;
@@ -894,44 +846,60 @@ void process_tag(parse_data* data, const XML_Char *tag_name)
     break;
   case NODES:
     break;
-  case NODES_COUNT:
-    break;
   case NODE:
-    break;
-  case X:
-    break;
-  case Y:
-    break;
-  case Z:
     break;
   case ELEMENTS:
     break;
-  case ELEMENTS_COUNT:
-    break;
   case ELEMENT:
-    break;
-  case NODE_ID:
     break;
   case BOUNDARY_CONDITIONS:
     break;
   case PRESCRIBED_DISPLACEMENTS:
     break;
-  case PRESCRIBED_COUNT:
+  case PRESC_NODE:
+    break;
+  default:
+    break;
+  };
+}
+
+void process_end_tag(parse_data* data, int tag)
+{
+  switch(tag)
+  {
+  case TASK:
+    break;
+  case MODEL:
+    break;
+  case MODEL_PARAMETERS:
+    break;
+  case SOLUTION:
+    break;
+  case ELEMENT_TYPE:
+    break;
+  case LINE_SEARCH:
+    break;
+  case ARC_LENGTH:
+    break;
+  case INPUT_DATA:
+    break;
+  case GEOMETRY:
+    break;
+  case NODES:
+    break;
+  case NODE:
+    break;
+  case ELEMENTS:
+    break;
+  case ELEMENT:
+    break;
+  case BOUNDARY_CONDITIONS:
+    break;
+  case PRESCRIBED_DISPLACEMENTS:
     break;
   case PRESC_NODE:
     break;
-  case PRESC_ID:
-    break;
-  case PRESC_X:
-    break;
-  case PRESC_Y:
-    break;
-  case PRESC_Z:
-    break;
-  case PRESC_TYPE:
-    break;
   default:
-    process_unknown_tag(data,tag_name);
     break;
   };
 }

@@ -41,7 +41,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="C:\myprojects\expat2.0.1\Source\lib\ "
-				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;XML_STATIC;USE_EXPAT"
+				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;XML_STATIC;USE_EXPAT;_CRT_SECURE_NO_WARNINGS"
 				MinimalRebuild="true"
 				ExceptionHandling="0"
 				BasicRuntimeChecks="3"
