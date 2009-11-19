@@ -226,6 +226,22 @@ void solve( fea_task *task,
             elements_array *elements,
             prescribed_boundary_array *presc_boundary)
 {
+  /* TODO: remove this, temporary code!!! */
+  int i,j;
+  printf("nodes\n");
+  for ( i = 0; i < nodes->nodes_count; ++ i)
+  {
+    for ( j = 0; j < MAX_DOF; ++ j)
+      printf("%f ", nodes->nodes[i][j]);
+    printf("\n");
+  }
+  printf("elements\n");
+  for ( i = 0; i < elements->elements_count; ++ i)
+  {
+    for ( j = 0; j < fea_params->nodes_per_element; ++ j)
+      printf("%d ", elements->elements[i][j]);
+    printf("\n");
+  }
 }
 
 int parse_cmdargs(int argc, char **argv,char **filename)
@@ -500,6 +516,7 @@ static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
   }
 }
 
+/* Case-insensitive string comparsion procedure */
 int istrcmp(s1,s2)
      const char *s1, *s2;
 {
@@ -526,18 +543,26 @@ int istrcmp(s1,s2)
 
 #define INDEX_STACK_SIZE 5
 
+/*
+ * Stack for storing element or nodes indexes or sizes in xml representation
+ * i.e. top level of the stack - number of nodes, a level below - current
+ * node index, one more level below could be dof index for the current node
+ * 
+ */
 typedef struct index_stack_tag {
   int storage[INDEX_STACK_SIZE];
   int level;
-} index_stack;
+} index_stack; 
 
+/* Stack operating functions */
+/* Initialization */
 void index_stack_init(index_stack* stack)
 {
   memset(&stack->storage,0,sizeof(stack->storage));
   /* stack->level = -1 means no elements in stack */
   stack->level = -1;
 }
-  
+/* Take a stack head element, or return FALSE if an empty */
 BOOL index_stack_pop(index_stack* stack, int* value)
 {
   if (stack->level == -1)
@@ -545,7 +570,7 @@ BOOL index_stack_pop(index_stack* stack, int* value)
   *value = stack->storage[stack->level--];
   return TRUE;
 }
-
+/* Push element to the stack */
 void index_stack_push(index_stack* stack, int value)
 {
   if (stack->level == sizeof(stack->storage)/sizeof(int))
@@ -560,7 +585,7 @@ void index_stack_push(index_stack* stack, int value)
 }
 
 
-
+/* All known XML tags */
 typedef enum xml_format_tags_enum {
   UNKNOWN_TAG,
   TASK,
@@ -581,6 +606,7 @@ typedef enum xml_format_tags_enum {
   PRESC_NODE
 } xml_format_tags;
 
+/* Convert particular string to the XML tag enum */
 static xml_format_tags tagname_to_enum(const XML_Char* name)
 {
   if (!istrcmp(name,"TASK")) return TASK;
@@ -597,7 +623,7 @@ static xml_format_tags tagname_to_enum(const XML_Char* name)
   if (!istrcmp(name,"ELEMENTS")) return ELEMENTS;
   if (!istrcmp(name,"ELEMENT")) return ELEMENT;
   if (!istrcmp(name,"BOUNDARY-CONDITIONS")) return BOUNDARY_CONDITIONS;
-  if (!istrcmp(name,"PRESCRIBED-DISPLACEMENTS")) return PRESCRIBED_DISPLACEMENTS;
+  if(!istrcmp(name,"PRESCRIBED-DISPLACEMENTS"))return PRESCRIBED_DISPLACEMENTS;
   if (!istrcmp(name,"PRESC-NODE")) return PRESC_NODE;
   return UNKNOWN_TAG;
 }
@@ -628,8 +654,8 @@ char *trim_whitespaces(const char* string,size_t size)
   int not_ws_end = 0;
   const char* ptr = string;
   /* find starting non-whitespace character */
-  while( --size && isspace(*ptr++)) not_ws_start++;
-  if (size != 0/* && ptr != end*/)
+  while( isspace(*ptr++) && size-- ) not_ws_start++;
+  if (size != 0 || not_ws_start == 0)
   {
     ptr--;
     /* find trailing non-whitespace character */
@@ -642,11 +668,14 @@ char *trim_whitespaces(const char* string,size_t size)
   return result;
 }
 
+/*
+ * Functions called from expat_start/end_tag_handler
+ * when the tag is known
+ */
 void process_begin_tag(parse_data* data, int tag,const XML_Char **atts);
 void process_end_tag(parse_data* data, int tag);
 
-
-
+/* Expat start tag handler */
 void expat_start_tag_handler(void *userData,
                       const XML_Char *name,
                       const XML_Char **atts)
@@ -657,6 +686,7 @@ void expat_start_tag_handler(void *userData,
     process_begin_tag(data,tag,atts);
 }
 
+/* Expat End tag handler */
 void expat_end_tag_handler(void *userData,
                    const XML_Char *name)
 {
@@ -665,32 +695,43 @@ void expat_end_tag_handler(void *userData,
 
   if (tag != UNKNOWN_TAG)
     process_end_tag(data,tag);
-  
+  /* clear tag text data at tag close */
   free(data->current_text);
   data->current_text = (char*)0;
   data->current_size = 0;
 }
 
+/*
+ * Expat handler for the text between tags
+ * Since this function could be called several times for the current tag,
+ * it is necessary to store text somewhere. We use parse_data->current_text
+ * pointer and parse_data->current_size for these purposes
+ */
 void expat_text_handler(void *userData,
                         const XML_Char *s,
                         int len)
 {
   parse_data* data = (parse_data*)userData;
   char *ptr;
-  
-  if (!data->current_text)
+  if (len)
   {
-    data->current_text = (char*)malloc(len);
-    ptr = data->current_text;
+    if (!data->current_text)    /* allocate memory for the text in tag */
+    {
+      data->current_text = (char*)malloc(len);
+      ptr = data->current_text;
+    }
+    else                        /* reallocate/widen memory alread allocated */
+    {
+      data->current_text = (char*)realloc(data->current_text,
+                                          data->current_size+len);
+      ptr = data->current_text;
+      ptr += data->current_size;  
+    }
+    /* append text to the end of allocated/reallocad buffer */
+    /* and increase size variable */
+    memcpy(ptr,s,len);
+    data->current_size += len;
   }
-  else
-  {
-    data->current_text = (char*)realloc(data->current_text,data->current_size+len);
-    ptr = data->current_text;
-    ptr += data->current_size;  
-  }
-  memcpy(ptr,s,len);
-  data->current_size += len;
 }
 
 
@@ -709,7 +750,7 @@ static BOOL expat_data_load(char *filename,
   parse_data parse;
   enum XML_Status status;
   char *file_contents = (char*)0;
-  
+
   /* Try to open file */
   if (!(xml_document_file = fopen(filename,"rt")))
   {
@@ -766,13 +807,15 @@ static BOOL expat_data_load(char *filename,
   *nodes = parse.nodes;
   *elements = parse.elements;
   *presc_boundary = parse.presc_boundary;
+
   
   result = TRUE;
   return result;
 }
 
 
-
+/* test if an attribute name is what expected(attribute_name)
+ * and increase pointer to the next attribute if yes*/
 BOOL check_attribute(const char* attribute_name, const XML_Char ***atts)
 {
   BOOL result = FALSE;
@@ -784,6 +827,7 @@ BOOL check_attribute(const char* attribute_name, const XML_Char ***atts)
   return result;
 }
 
+/* model tag handler */
 void process_model_type(parse_data* data, const XML_Char **atts)
 {
   char* text = (char*)0;
@@ -806,6 +850,7 @@ void process_model_type(parse_data* data, const XML_Char **atts)
   }
 }
 
+/* model-parameters tag handler */
 void process_model_params(parse_data* data, const XML_Char **atts)
 {
   char* text = (char*)0;
@@ -820,6 +865,250 @@ void process_model_params(parse_data* data, const XML_Char **atts)
   }
 }
 
+/* solution tag handler */
+void process_solution(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  for (; *atts; atts++ )
+  {
+    if (check_attribute("modified-newton",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->task->modified_newton = (!istrcmp(text,"yes") || !istrcmp(text,"true"))? TRUE: FALSE;
+      free(text);
+    }
+    else if (check_attribute("task-type",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      if (!istrcmp(text,"CARTESIAN3D"))
+        data->task->type = CARTESIAN3D;
+      free(text);
+    }
+    else if (check_attribute("load-increments-count",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->task->load_increments_count = atoi(text);
+      free(text);
+    }
+    else if (check_attribute("desired-tolerance",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->task->desired_tolerance = atof(text);
+      free(text);
+    }
+  }
+  data->parent_tag = SOLUTION;
+}
+
+/* element-type tag handler */
+void process_element_type(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  for (; *atts; atts++ )
+  {
+    if (check_attribute("name",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      if (!istrcmp(text,"TETRAHEDRA10"))
+        data->task->ele_type = TETRAHEDRA10;
+      free(text);
+    }
+    else if (check_attribute("nodes-count",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->fea_params->nodes_per_element = atoi(text);
+      free(text);
+    }
+    else if (check_attribute("nodes-count",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->fea_params->nodes_per_element = atoi(text);
+      free(text);
+    }
+    else if (check_attribute("gauss-nodes-count",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->fea_params->gauss_nodes_count = atoi(text);
+      free(text);
+    }
+  }
+}
+
+/* line-search tag handler */
+void process_line_search(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  for (; *atts; atts++ )
+  {
+    if (check_attribute("max",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->task->linesearch_max = atoi(text);
+      free(text);
+    }
+  }
+}
+
+/* arc-length tag handler */
+void process_arc_length(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  for (; *atts; atts++ )
+  {
+    if (check_attribute("max",&atts))
+    {
+      text = trim_whitespaces(*atts,strlen(*atts));
+      data->task->arclength_max = atoi(text);
+      free(text);
+    }
+  }
+}
+
+/* nodes tag handler */
+void process_nodes(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  int i = 0;
+  /* set parameters only when 'nodes' tag is a child of the 'geometry' tag */
+  if ( data->parent_tag == GEOMETRY )
+  {
+    for (; *atts; atts++ )
+    {
+      if (check_attribute("count",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        data->nodes->nodes_count = atoi(text);
+        /* allocate storage for nodes */
+        data->nodes->nodes =
+          (real**)malloc(data->nodes->nodes_count*sizeof(real*));
+        for (; i < data->nodes->nodes_count; ++ i)
+          data->nodes->nodes[i] = (real*)malloc(MAX_DOF*sizeof(real));
+        free(text);
+      }
+    }
+    /* set parent tag to 'nodes' to recoginze an appropriate 'node' tag */
+    data->parent_tag = NODES;
+  }
+}
+
+/* node tag handler */
+void process_node(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  int i = 0;
+  real dofs[MAX_DOF];
+  int id = -1;
+  if ( data->parent_tag == NODES )
+  {
+    for (; *atts; atts++ )
+    {
+      if (check_attribute("id",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        id = atoi(text);
+        free(text);
+      }
+      else if (check_attribute("x",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        dofs[0] = atof(text);
+        free(text);
+      }
+      else if (check_attribute("y",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        dofs[1] = atof(text);
+        free(text);
+      }
+      else if (check_attribute("z",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        dofs[2] = atof(text);
+        free(text);
+      }
+    }
+    if (id != -1)
+      memcpy(data->nodes->nodes[id],dofs,sizeof(dofs));
+  }
+}
+
+/* elements tag handler */
+void process_elements(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  int i = 0;
+  /* set parameters only when 'nodes' tag is a child of the 'geometry' tag */
+  if ( data->parent_tag == GEOMETRY )
+  {
+    for (; *atts; atts++ )
+    {
+      if (check_attribute("count",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        data->elements->elements_count = atoi(text);
+        /* allocate storage for elements */
+        data->elements->elements = 
+          (int**)malloc(data->elements->elements_count*sizeof(int*));
+        for (; i < data->elements->elements_count; ++ i)
+          data->elements->elements[i] =
+            (int*)malloc(data->fea_params->nodes_per_element*sizeof(int));
+        free(text);
+      }
+    }
+    /* set parent tag to 'ELEMENTS' to recoginze an appropriate 'ELEMENT' tag */
+    data->parent_tag = ELEMENTS;
+  }
+}
+
+/* take the node id/position from the element attributes
+ * like 'node1' or 'node10'
+ * returns -1 in case of wrong attribute name
+ * but not skip it in this case!
+ */
+int node_position_from_attr(const XML_Char ***atts)
+{
+  int result = -1;
+  char* pos = strstr(**atts,"node");
+  if (pos == **atts)
+  {
+    result = atoi(pos+strlen("node"))-1;
+    (*atts)++;
+  }
+  return result;
+}
+
+/* element tag handler */
+void process_element(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  int pos = -1;
+  int element_size_bytes = data->fea_params->nodes_per_element*sizeof(int);
+  int* element = (int*)malloc(element_size_bytes);
+  int id = -1;
+  if ( data->parent_tag == ELEMENTS )
+  {
+    for (; *atts; atts++ )
+    {
+      if (check_attribute("id",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        id = atoi(text);
+        free(text);
+      }
+      if (-1 != (pos = node_position_from_attr(&atts)))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        element[pos] = atoi(text); 
+        free(text);
+      }
+    }
+    if (id != -1)
+      memcpy(data->elements->elements[id],element,element_size_bytes);
+  }
+  free(element);
+}
+
+
 void process_begin_tag(parse_data* data, int tag,const XML_Char **atts)
 {
   switch(tag)
@@ -833,24 +1122,34 @@ void process_begin_tag(parse_data* data, int tag,const XML_Char **atts)
     process_model_params(data,atts);
     break;
   case SOLUTION:
+    process_solution(data,atts);
     break;
   case ELEMENT_TYPE:
+    process_element_type(data,atts);
     break;
   case LINE_SEARCH:
+    process_line_search(data,atts);    
     break;
   case ARC_LENGTH:
+    process_arc_length(data,atts);    
     break;
   case INPUT_DATA:
+    data->parent_tag = INPUT_DATA;
     break;
   case GEOMETRY:
+    data->parent_tag = GEOMETRY;
     break;
   case NODES:
+    process_nodes(data,atts);
     break;
   case NODE:
+    process_node(data,atts);
     break;
   case ELEMENTS:
+    process_elements(data,atts);
     break;
   case ELEMENT:
+    process_element(data,atts);
     break;
   case BOUNDARY_CONDITIONS:
     break;
@@ -867,39 +1166,36 @@ void process_end_tag(parse_data* data, int tag)
 {
   switch(tag)
   {
-  case TASK:
-    break;
-  case MODEL:
-    break;
-  case MODEL_PARAMETERS:
-    break;
-  case SOLUTION:
-    break;
-  case ELEMENT_TYPE:
-    break;
-  case LINE_SEARCH:
-    break;
-  case ARC_LENGTH:
-    break;
-  case INPUT_DATA:
-    break;
-  case GEOMETRY:
-    break;
-  case NODES:
-    break;
   case NODE:
-    break;
-  case ELEMENTS:
     break;
   case ELEMENT:
     break;
-  case BOUNDARY_CONDITIONS:
-    break;
-  case PRESCRIBED_DISPLACEMENTS:
-    break;
   case PRESC_NODE:
     break;
+  case MODEL:
+  case SOLUTION:
+  case INPUT_DATA:    
+    data->parent_tag = TASK;
+    break;
+  case MODEL_PARAMETERS:
+    data->parent_tag = MODEL;
+    break;
+  case ELEMENT_TYPE:
+  case LINE_SEARCH:
+  case ARC_LENGTH:
+    data->parent_tag = SOLUTION;
+    break;
+  case GEOMETRY:
+  case BOUNDARY_CONDITIONS:
+    data->parent_tag = INPUT_DATA;
+    break;
+  case NODES:
+  case ELEMENTS:
+    data->parent_tag = GEOMETRY;
+    break;
+  case TASK:
   default:
+    data->parent_tag = UNKNOWN_TAG;
     break;
   };
 }
