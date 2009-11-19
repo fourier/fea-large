@@ -82,7 +82,7 @@ typedef struct fea_solution_params_tag {
   int msize;                    /* size of the global stiffness matrix */
   int nodes_per_element;        /* number of nodes defined in element 
                                    based on fea_task::ele_type */
-  int gauss_nodes_count;			  /* number of gauss nodes per element */
+  int gauss_nodes_count;        /* number of gauss nodes per element */
 } fea_solution_params;
 
 /*************************************************************/
@@ -128,9 +128,9 @@ typedef struct prescribed_boundary_array_tag {
  * depending on number of shape functions N per element
  * TODO: add tables with layouts in comments */
 typedef struct gauss_node_tag {
-  real weigth; 								/* weight for the integration */
-  real *forms; 								/* shape function values for gauss node, N */
-  real **dforms;							/* derivatives of shape functions with
+  real weigth;                /* weight for the integration */
+  real *forms;                /* shape function values for gauss node, N */
+  real **dforms;              /* derivatives of shape functions with
                                * respect to d.o.f.
                                * Rows represent d.o.f, columns represent
                                * derivatives in nodes */
@@ -142,7 +142,7 @@ typedef struct gauss_node_tag {
  * derivatives
  */
 typedef struct elements_database_tag {
-  gauss_node **gauss_nodes;		/* Gauss nodes 2d array
+  gauss_node **gauss_nodes;   /* Gauss nodes 2d array
                                * rows represent elements,
                                * columns are particular gauss nodes
                                * per element */
@@ -242,6 +242,15 @@ void solve( fea_task *task,
       printf("%d ", elements->elements[i][j]);
     printf("\n");
   }
+  printf("boundary\n");
+  for ( i = 0; i < presc_boundary->prescribed_nodes_count; ++ i)
+  {
+    printf("%d %f %f %f %d\n",presc_boundary->prescribed_nodes[i].node_number,
+           presc_boundary->prescribed_nodes[i].values[0],
+           presc_boundary->prescribed_nodes[i].values[1],
+           presc_boundary->prescribed_nodes[i].values[2],
+           presc_boundary->prescribed_nodes[i].type);
+  }
 }
 
 int parse_cmdargs(int argc, char **argv,char **filename)
@@ -267,16 +276,16 @@ int do_main(char* filename)
 
   /* load geometry and solution details */
   if(!initial_data_load(filename,
-												&task,
-												&fea_params,
-												&nodes,
-												&elements,
-												&presc_boundary))
+                        &task,
+                        &fea_params,
+                        &nodes,
+                        &elements,
+                        &presc_boundary))
   {
     printf("Error. Unable to load %s.\n",filename);
     result = 1;
   }
-	
+  
   /* solve task */
   solve(task, fea_params, nodes, elements, presc_boundary);
   /* deallocate resources */      
@@ -350,7 +359,7 @@ real df_dr(int i,real r,real s,real t)
   case 6: return -4*s;
   case 7: return -4*t;
   case 8: return 4*t;
-  case 9:	return 0;
+  case 9: return 0;
   }
   return 0;
 }
@@ -369,7 +378,7 @@ real df_ds(int i, real r, real s, real t)
   case 6: return -4*t-8*s-4*r+4;
   case 7: return -4*t;
   case 8: return 0;
-  case 9:	return 4*t;
+  case 9: return 4*t;
   }
   return 0;
 }
@@ -388,7 +397,7 @@ real df_dt(int i, real r, real s, real t)
   case 6: return -4*s;
   case 7: return -8*t-4*s-4*r+4;
   case 8: return 4*r;
-  case 9:	return 4*s;
+  case 9: return 4*s;
   }
   return 0;
 }
@@ -452,8 +461,8 @@ static nodes_array* initialize_nodes_array()
 /* carefully deallocate nodes array */
 static void free_nodes_array(nodes_array* nodes)
 {
- 	if (nodes)
-	{
+  if (nodes)
+  {
     int counter = 0;
     if (nodes->nodes_count && nodes->nodes)
     {
@@ -462,7 +471,7 @@ static void free_nodes_array(nodes_array* nodes)
       free(nodes->nodes);
     }
     free(nodes);
-	}
+  }
 }
 
 
@@ -520,21 +529,21 @@ static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
 int istrcmp(s1,s2)
      const char *s1, *s2;
 {
-	/* case insensitive comparison */
-	int d;
-	for (;;) {
+  /* case insensitive comparison */
+  int d;
+  for (;;) {
 #ifdef ASCII_CTYPE
-	  if (!isascii(*s1) || !isascii(*s2))
-	    d = *s1 - *s2;
-	  else
+    if (!isascii(*s1) || !isascii(*s2))
+      d = *s1 - *s2;
+    else
 #endif
-	    d = (tolower((unsigned char) *s1) - tolower((unsigned char)*s2));
-	  if ( d != 0 || *s1 == '\0' || *s2 == '\0' )
-	    return d;
-	  ++s1;
-	  ++s2;
-	}
-	/*NOTREACHED*/
+      d = (tolower((unsigned char) *s1) - tolower((unsigned char)*s2));
+    if ( d != 0 || *s1 == '\0' || *s2 == '\0' )
+      return d;
+    ++s1;
+    ++s2;
+  }
+  /*NOTREACHED*/
 }
 
 
@@ -1109,6 +1118,88 @@ void process_element(parse_data* data, const XML_Char **atts)
 }
 
 
+/* prescribed-displacements tag handler */
+void process_prescribed_displacements(parse_data* data, const XML_Char **atts)
+{
+  char* text = (char*)0;
+  int i = 0;
+  int size;
+  /* set parameters only when 'nodes' tag is a child of the 'geometry' tag */
+  if ( data->parent_tag == BOUNDARY_CONDITIONS )
+  {
+    for (; *atts; atts++ )
+    {
+      if (check_attribute("count",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        data->presc_boundary->prescribed_nodes_count = atoi(text);
+        size = data->presc_boundary->prescribed_nodes_count;
+        /* allocate storage for prescribed nodes */
+        data->presc_boundary->prescribed_nodes =  
+          (prescibed_boundary_node*)malloc(size*sizeof(prescibed_boundary_node));
+        free(text);
+      }
+    }
+    /* set parent tag to 'nodes' to recoginze an appropriate 'node' tag */
+    data->parent_tag = PRESCRIBED_DISPLACEMENTS;
+  }
+}
+
+/* node tag handler */
+void process_prescribed_node(parse_data* data, const XML_Char **atts)
+{
+  		/* <presc-node id="1" node-id="10" x="0" y="0" z="0" type="7"/> */
+  char* text = (char*)0;
+  int i = 0;
+  prescibed_boundary_node node;
+  int id = -1;
+  if ( data->parent_tag == PRESCRIBED_DISPLACEMENTS )
+  {
+    for (; *atts; atts++ )
+    {
+      if (check_attribute("id",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        id = atoi(text);
+        free(text);
+      }
+      else if (check_attribute("node-id",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        node.node_number = atoi(text);
+        free(text);
+      }
+      else if (check_attribute("x",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        node.values[0] = atof(text);
+        free(text);
+      }
+      else if (check_attribute("y",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        node.values[1] = atof(text);
+        free(text);
+      }
+      else if (check_attribute("z",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        node.values[2] = atof(text);
+        free(text);
+      }
+      else if (check_attribute("type",&atts))
+      {
+        text = trim_whitespaces(*atts,strlen(*atts));
+        /* TODO: add proper conversion */
+        node.type= (prescribed_boundary_type)atoi(text);
+        free(text);
+      }
+    }
+    if (id != -1)
+      memcpy(&data->presc_boundary->prescribed_nodes[id],&node,sizeof(node));
+  }
+}
+
 void process_begin_tag(parse_data* data, int tag,const XML_Char **atts)
 {
   switch(tag)
@@ -1152,10 +1243,14 @@ void process_begin_tag(parse_data* data, int tag,const XML_Char **atts)
     process_element(data,atts);
     break;
   case BOUNDARY_CONDITIONS:
+    data->parent_tag = BOUNDARY_CONDITIONS;
     break;
   case PRESCRIBED_DISPLACEMENTS:
+    process_prescribed_displacements(data,atts);
+    data->parent_tag = PRESCRIBED_DISPLACEMENTS;
     break;
   case PRESC_NODE:
+    process_prescribed_node(data,atts);
     break;
   default:
     break;
