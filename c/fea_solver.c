@@ -1004,7 +1004,6 @@ void process_nodes(parse_data* data, const XML_Char **atts)
 void process_node(parse_data* data, const XML_Char **atts)
 {
   char* text = (char*)0;
-  int i = 0;
   real dofs[MAX_DOF];
   int id = -1;
   if ( data->parent_tag == NODES )
@@ -1122,7 +1121,6 @@ void process_element(parse_data* data, const XML_Char **atts)
 void process_prescribed_displacements(parse_data* data, const XML_Char **atts)
 {
   char* text = (char*)0;
-  int i = 0;
   int size;
   /* set parameters only when 'nodes' tag is a child of the 'geometry' tag */
   if ( data->parent_tag == BOUNDARY_CONDITIONS )
@@ -1150,7 +1148,6 @@ void process_prescribed_node(parse_data* data, const XML_Char **atts)
 {
   		/* <presc-node id="1" node-id="10" x="0" y="0" z="0" type="7"/> */
   char* text = (char*)0;
-  int i = 0;
   prescibed_boundary_node node;
   int id = -1;
   if ( data->parent_tag == PRESCRIBED_DISPLACEMENTS )
