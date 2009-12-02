@@ -1,0 +1,14 @@
+
+INTRODUCTION
+============
+
+The application is a Finite Elements Method implementation for the Finite Strains theory,
+using the following material models:
+A5
+Neo-hookean Comressible
+
+REQUIREMENTS
+============
+Expat XML parser (http://expat.sourceforge.net/)
+ - used to read geometry and task parameters from XML files
+ 
