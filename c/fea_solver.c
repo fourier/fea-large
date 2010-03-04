@@ -15,15 +15,51 @@ typedef int BOOL;
 #define FALSE 0
 #define TRUE 1
 
+/* Redefine type of the floating point values */
+typedef double real;
+
+
 #define MAX_DOF 3
 #define MAX_MATERIAL_PARAMETERS 10
 
 /*************************************************************/
 /* Globals                                                   */
+
 extern int errno;
 
-/* Redefine type of the floating point values */
-typedef double real;
+/*
+ * arrays of gauss nodes with coefficients                   
+ * layout: [number_of_nodes x 4], with values:               
+ * {weight, r,s,t}                                           
+ * per gauss node. For 2d cases t = 0
+ */
+
+/* Element: TETRAHEDRA10, 4 nodes */
+real gauss_nodes4_tetr10[4][4] = { {1/4.,        /* weight */
+                                    0.58541020,  /* a */
+                                    0.13819660,  /* b */
+                                    0.13819660}, /* b */
+                                   {1/4.,
+                                    0.13819660,  /* b */
+                                    0.58541020,  /* a */
+                                    0.13819660}, /* b */
+                                   {1/4.,
+                                    0.13819660,  /* b */
+                                    0.13819660,  /* b */
+                                    0.58541020}, /* a */
+                                   {1/4.,
+                                    0.13819660,  /* b */
+                                    0.13819660,  /* b */
+                                    0.13819660}  /* b */
+};
+/* Element: TETRAHEDRA10, 5 nodes */
+real gauss_nodes5_tetr10[5][4] = { {-4/5., 1/4., 1/4., 1/4.},
+                                   {9/20., 1/2., 1/6., 1/6.},
+                                   {9/20., 1/6., 1/2., 1/6.},
+                                   {9/20., 1/6., 1/6., 1/2.},
+                                   {9/20., 1/6., 1/6., 1/6.} };
+
+
 
 typedef enum task_type_enum {
   /* PLANE_STRESS, PLANE_STRAIN, AXISYMMETRIC,  */
