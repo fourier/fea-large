@@ -100,19 +100,6 @@ typedef enum prescribed_boundary_type_enum {
 } prescribed_boundary_type;
 
 
-/*
- * Finite element structure
- */
-typedef struct element_class_tag {
-  disoform_t dshape;
-  isoform_t shape;
-  int nodes_per_element;          /* number of nodes defined in element 
-                                     based on type */
-  int gauss_nodes_count;          /* number of gauss nodes per element */
-  real (*gauss_nodes_data)[][4];  /* pointer to an array of gauss nodes */
-} element_class;
-
-
 typedef struct fea_material_model_tag {
   model_type model;                         /* model type */
   real parameters[MAX_MATERIAL_PARAMETERS]; /* model material parameters */
@@ -189,7 +176,7 @@ typedef struct prescribed_boundary_array_tag {
  * depending on number of shape functions N per element
  * TODO: add tables with layouts in comments */
 typedef struct gauss_node_tag {
-  real weigth;                /* weight for the integration */
+  real weight;                /* weight for the integration */
   real *forms;                /* shape function values for gauss node, N */
   real **dforms;              /* derivatives of shape functions with
                                * respect to d.o.f.
@@ -203,13 +190,9 @@ typedef struct gauss_node_tag {
  * derivatives
  */
 typedef struct elements_database_tag {
-  real (*gauss_nodes_data)[][4];  /* pointer to an array of gauss
+  real (*gauss_nodes_data)[4];  /* pointer to an array of gauss
                                    * coefficients and weights */  
-  gauss_node **gauss_nodes;   /* Gauss nodes 2d array
-                               * rows represent elements,
-                               * columns are particular gauss nodes
-                               * per element */
-  /* For every gauss node */
+  gauss_node **gauss_nodes;   /* Gauss nodes array */
 } elements_database;
 
 /*
@@ -222,7 +205,7 @@ typedef struct fea_solver_tag {
   nodes_array *nodes;              
   elements_array *elements;
   prescribed_boundary_array *presc_boundary;
-  elements_database *elements_db; /* array of pre-constructed
+  elements_database elements_db;  /* array of pre-constructed
                                    * values of derivatives of the
                                    * isoparametric shape functions
                                    * in gauss nodes */
@@ -256,15 +239,15 @@ BOOL initial_data_load(char *filename,
 /* Allocators for structures with a data from file           */
 
 /* Initializa fea task structure and fill with default values */
-static fea_task* initialize_fea_task();
+static fea_task* new_fea_task();
 /* Initializes fea solution params with default values */
-static fea_solution_params* initialize_fea_solution_params();
+static fea_solution_params* new_fea_solution_params();
 /* Initialize nodes array but not initialize particular arrays  */
-static nodes_array* initialize_nodes_array();
+static nodes_array* new_nodes_array();
 /* Initialize elements array but not initialize particular elements */
-static elements_array* initialize_elements_array();
+static elements_array* new_elements_array();
 /* Initialize boundary nodes array but not initialize particular nodes */
-static prescribed_boundary_array* initialize_prescribed_boundary_array();
+static prescribed_boundary_array* new_prescribed_boundary_array();
 
 /*
  * Constructor for the main application structure
@@ -316,6 +299,20 @@ void dump_input_data( fea_task *task,
                       elements_array *elements,
                       prescribed_boundary_array *presc_boundary);
 
+/*************************************************************/
+/* Functions for fea_solver structure                        */
+
+/*
+ * Fills solver with pointers to functions and pointers to arrays
+ * of gauss nodes for particular element type.
+ * This function is used on a construction phase
+ */
+static void solver_create_element_params(fea_solver* solver);
+
+/* Allocates memory and construct elements database for solver */
+static void solver_create_element_database(fea_solver* solver);
+/* Destructor for the element database */
+static void solver_free_element_database(fea_solver* solver);
 
 int main(int argc, char **argv)
 {
@@ -360,12 +357,6 @@ int do_main(char* filename)
   
   /* solve task */
   solve(task, fea_params, nodes, elements, presc_boundary);
-  /* deallocate resources */      
-  free_fea_task(task);
-  free_fea_solution_params(fea_params);
-  free_nodes_array(nodes);
-  free_elements_array(elements);
-  free_prescribed_boundary_array(presc_boundary);
   
   return result;
 }
@@ -377,7 +368,7 @@ void solve( fea_task *task,
             prescribed_boundary_array *presc_boundary)
 {
   /* initialize variables */
-  fea_solver *solver = NULL;
+  fea_solver *solver = (fea_solver*)0;
   
   /* Dump all data */
   dump_input_data(task,fea_params,nodes,elements,presc_boundary);
@@ -389,7 +380,9 @@ void solve( fea_task *task,
                           presc_boundary);
   /* backup solver to the global_solver for the case of emergency exit */
   global_solver = solver;
-  
+
+  /* Create elements database */
+  solver_create_element_database(solver);
 }
 
 
@@ -447,23 +440,141 @@ void application_done(void)
 
 
 fea_solver* new_fea_solver(fea_task *task,
-                                  fea_solution_params *fea_params,
-                                  nodes_array *nodes,
-                                  elements_array *elements,
-                                  prescribed_boundary_array *prscs_boundary)
+                           fea_solution_params *fea_params,
+                           nodes_array *nodes,
+                           elements_array *elements,
+                           prescribed_boundary_array *prs_boundary)
 {
+  /* Allocate structure */
   fea_solver* solver = malloc(sizeof(fea_solver));
+  /* Copy pointers to the solver structure */
+  solver->task = task;
+  solver->fea_params = fea_params;
+  solver->nodes = nodes;
+  solver->elements = elements;
+  solver->presc_boundary = prs_boundary;
+
+  solver->elements_db.gauss_nodes = (gauss_node**)0;
+  solver_create_element_params(solver);
+  
   return solver;
 }
 
 
 void free_fea_solver(fea_solver* solver)
 {
-  
+  /* deallocate resources */
+  solver_free_element_database(solver);
+  free_fea_task(solver->task);
+  free_fea_solution_params(solver->fea_params);
+  free_nodes_array(solver->nodes);
+  free_elements_array(solver->elements);
+  free_prescribed_boundary_array(solver->presc_boundary);
 }
 
+/*
+ * Creates a particular gauss node for the element
+ * with index element_index and gauss node number gauss_node_index
+ */
+static gauss_node *solver_new_gauss_node(fea_solver* solver,
+                                         int gauss_node_index)
+{
+  gauss_node* node = (gauss_node*)0;
+  int i,j;
+  real r,s,t;
+  /* Check for array bounds*/
+  if (gauss_node_index >= 0 &&
+      gauss_node_index < solver->fea_params->gauss_nodes_count)
+  {
+    node = malloc(sizeof(gauss_node));
+    /* set the weight for this gauss node */
+    node->weight = solver->elements_db.gauss_nodes_data[gauss_node_index][0];
+    /* set shape function values and their derivatives for this node */
+    node->forms = malloc(sizeof(real)*solver->fea_params->nodes_per_element);
+    node->dforms = malloc(sizeof(real*)*solver->task->dof);
+    for ( i = 0; i < solver->task->dof; ++ i)
+      node->dforms[i] = malloc(sizeof(real)*solver->fea_params->nodes_per_element);
+    for ( i = 0; i < solver->fea_params->nodes_per_element; ++ i)
+    {
+      r = solver->elements_db.gauss_nodes_data[gauss_node_index][1];
+      s = solver->elements_db.gauss_nodes_data[gauss_node_index][2];
+      t = solver->elements_db.gauss_nodes_data[gauss_node_index][3];
+      node->forms[i] = solver->shape(i,r,s,t);
+      for ( j = 0; j < solver->task->dof; ++ j)
+        node->dforms[j][i] = solver->dshape(i,j,r,s,t);
+    }
 
+  }
+  return node;
+}
 
+/* Deallocate gauss node */
+static void solver_free_gauss_node(fea_solver *solver,
+                                   gauss_node *node)
+{
+  int i;
+  if (node)
+  {
+    /* clear forms and dforms arrays */
+    free(node->forms);
+    for ( i = 0; i < solver->task->dof; ++ i)
+      free(node->dforms[i]);
+    free(node->dforms);
+    /* free the node itself */
+    free(node);
+  }
+}
+  
+
+void solver_create_element_database(fea_solver* solver)
+{
+  int gauss;
+  int gauss_count = solver->fea_params->gauss_nodes_count;
+  /* Create database only if not created yet */
+  if (!solver->elements_db.gauss_nodes)
+  {
+    /* allocate memory for gauss nodes array */
+    solver->elements_db.gauss_nodes =
+      malloc(sizeof(gauss_node*)*gauss_count);
+    for (gauss = 0; gauss < gauss_count; ++ gauss)
+      solver->elements_db.gauss_nodes[gauss] =
+        solver_new_gauss_node(solver,gauss);
+    
+  }
+}
+
+void solver_free_element_database(fea_solver* solver)
+{
+  int gauss;
+  if (solver->elements_db.gauss_nodes)
+  {
+    for (gauss = 0; gauss < solver->fea_params->gauss_nodes_count; ++gauss)
+      solver_free_gauss_node(solver,solver->elements_db.gauss_nodes[gauss]);
+    
+    free(solver->elements_db.gauss_nodes);
+  }
+}
+
+static void solver_create_element_params_tetrahedra10(fea_solver* solver);
+
+/*
+ * Creates particular element-dependent data in fea_solver
+ * All new element types shall be added here 
+ */
+void solver_create_element_params(fea_solver* solver)
+{
+  switch (solver->task->ele_type)
+  {
+  case TETRAHEDRA10:
+    solver_create_element_params_tetrahedra10(solver);
+    break;
+  default:
+    /* TODO: add error handling here */
+    exit(1);
+  };
+  
+}
+                         
 
 
 /* function for calculation value of shape function for 10-noded
@@ -474,7 +585,7 @@ void free_fea_solver(fea_solver* solver)
  * "The Finite Element Method for 3D Thermomechanical Applications"
  * by - Guido Dhond p.72
  */
-real isoform(int i,real r,real s,real t)
+real tetrahedra10_isoform(int i,real r,real s,real t)
 {
   switch(i)
   {
@@ -497,7 +608,7 @@ real isoform(int i,real r,real s,real t)
  * with respece to the 1st variable r
  * i - node number
  */ 
-real df_dr(int i,real r,real s,real t)
+real tetrahedra10_df_dr(int i,real r,real s,real t)
 {
   switch(i)
   {
@@ -520,7 +631,7 @@ real df_dr(int i,real r,real s,real t)
  * with respece to the 2nd variable s
  * i - node number
  */ 
-real df_ds(int i, real r, real s, real t)
+real tetrahedra10_df_ds(int i, real r, real s, real t)
 {
   switch(i)
   {
@@ -543,7 +654,7 @@ real df_ds(int i, real r, real s, real t)
  * with respece to the 3rd variable t
  * i - node number
  */ 
-real df_dt(int i, real r, real s, real t)
+real tetrahedra10_df_dt(int i, real r, real s, real t)
 {
   switch(i)
   {
@@ -569,20 +680,35 @@ real df_dt(int i, real r, real s, real t)
  * dof - degree of freedom, dof = 1 is r, dof = 2 is s, dof = 3 is t
  * r,s,t is [0;1] - local coordinates
  */
-real disoform(int shape,int dof,real r,real s,real t)
+real tetrahedra10_disoform(int shape,int dof,real r,real s,real t)
 {
   switch(dof)
   {
-  case 0: return df_dr(shape,r,s,t);
-  case 1: return df_ds(shape,r,s,t);
-  case 2: return df_dt(shape,r,s,t);
+  case 0: return tetrahedra10_df_dr(shape,r,s,t);
+  case 1: return tetrahedra10_df_ds(shape,r,s,t);
+  case 2: return tetrahedra10_df_dt(shape,r,s,t);
   }
   return 0;
 }
 
 
+void solver_create_element_params_tetrahedra10(fea_solver* solver)
+{
+  solver->shape = tetrahedra10_isoform;
+  solver->dshape = tetrahedra10_disoform;
+  switch (solver->fea_params->gauss_nodes_count)
+  {
+  case 4:
+    solver->elements_db.gauss_nodes_data = gauss_nodes4_tetr10;
+    break;
+  case 5:
+    solver->elements_db.gauss_nodes_data = gauss_nodes5_tetr10;
+    break;
+  }
+}
 
-static fea_task* initialize_fea_task()
+
+static fea_task* new_fea_task()
 {
   /* allocate memory */
   fea_task *task = (fea_task *)malloc(sizeof(fea_task));
@@ -608,7 +734,7 @@ static void free_fea_task(fea_task* task)
 }
 
 /* Initializes fea solution params with default values */
-static fea_solution_params* initialize_fea_solution_params()
+static fea_solution_params* new_fea_solution_params()
 {
   /* allocate memory */
   fea_solution_params *fea_params = (fea_solution_params *)
@@ -627,7 +753,7 @@ static void free_fea_solution_params(fea_solution_params* params)
 }
 
 /* Initialize nodes array but not initialize particular arrays  */
-static nodes_array* initialize_nodes_array()
+static nodes_array* new_nodes_array()
 {
   /* allocate memory */
   nodes_array *nodes = (nodes_array*)malloc(sizeof(nodes_array));
@@ -655,7 +781,7 @@ static void free_nodes_array(nodes_array* nodes)
 
 
 /* Initialize elements array but not initialize particular elements */
-static elements_array* initialize_elements_array()
+static elements_array* new_elements_array()
 {
   /* allocate memory */
   elements_array *elements = (elements_array*)malloc(sizeof(elements_array));
@@ -681,7 +807,7 @@ static void free_elements_array(elements_array *elements)
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
-static prescribed_boundary_array* initialize_prescribed_boundary_array()
+static prescribed_boundary_array* new_prescribed_boundary_array()
 {
   /* allocate memory */
   prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)
@@ -975,11 +1101,11 @@ static BOOL expat_data_load(char *filename,
   }
 
   /* allocate parse data */
-  parse.task = initialize_fea_task();
-  parse.fea_params = initialize_fea_solution_params();
-  parse.nodes = initialize_nodes_array();
-  parse.elements = initialize_elements_array();
-  parse.presc_boundary = initialize_prescribed_boundary_array();
+  parse.task = new_fea_task();
+  parse.fea_params = new_fea_solution_params();
+  parse.nodes = new_nodes_array();
+  parse.elements = new_elements_array();
+  parse.presc_boundary = new_prescribed_boundary_array();
   index_stack_init(&parse.stack);
   parse.current_size = 0;
   parse.current_text = (char*)0;
