@@ -15,17 +15,29 @@ typedef int BOOL;
 #define FALSE 0
 #define TRUE 1
 
-/* Redefine type of the floating point values */
-typedef double real;
-
-
 #define MAX_DOF 3
 #define MAX_MATERIAL_PARAMETERS 10
 
+/* Redefine type of the floating point values */
+typedef double real;
+
+/*
+ * A pointer to the the isoparametric shape
+ * function
+ */
+typedef real (*isoform_t)(int i,real r,real s,real t);
+
+/*
+ * A pointer to the derivative of the isoparametric shape
+ * function
+ */
+typedef real (*disoform_t)(int shape,int dof,real r,real s,real t);
+
 /*************************************************************/
-/* Globals                                                   */
+/* Global variables                                          */
 
 extern int errno;
+struct fea_solver_tag* global_solver;
 
 /*
  * arrays of gauss nodes with coefficients                   
@@ -88,10 +100,23 @@ typedef enum prescribed_boundary_type_enum {
 } prescribed_boundary_type;
 
 
+/*
+ * Finite element structure
+ */
+typedef struct element_class_tag {
+  disoform_t dshape;
+  isoform_t shape;
+  int nodes_per_element;          /* number of nodes defined in element 
+                                     based on type */
+  int gauss_nodes_count;          /* number of gauss nodes per element */
+  real (*gauss_nodes_data)[][4];  /* pointer to an array of gauss nodes */
+} element_class;
+
+
 typedef struct fea_material_model_tag {
   model_type model;                         /* model type */
   real parameters[MAX_MATERIAL_PARAMETERS]; /* model material parameters */
-  int parameters_count;                     /* number of material parameters */
+  int parameters_count;                     /* number of material params */
 } fea_model;
 
 /*
@@ -178,12 +203,35 @@ typedef struct gauss_node_tag {
  * derivatives
  */
 typedef struct elements_database_tag {
+  real (*gauss_nodes_data)[][4];  /* pointer to an array of gauss
+                                   * coefficients and weights */  
   gauss_node **gauss_nodes;   /* Gauss nodes 2d array
                                * rows represent elements,
                                * columns are particular gauss nodes
                                * per element */
   /* For every gauss node */
 } elements_database;
+
+/*
+ * A main application structure which shall contain all
+ * data necessary for solution
+ */
+typedef struct fea_solver_tag {
+  fea_task *task;               
+  fea_solution_params *fea_params; 
+  nodes_array *nodes;              
+  elements_array *elements;
+  prescribed_boundary_array *presc_boundary;
+  elements_database *elements_db; /* array of pre-constructed
+                                   * values of derivatives of the
+                                   * isoparametric shape functions
+                                   * in gauss nodes */
+  disoform_t dshape;              /* a function pointer to derivative of the
+                                   * shape function */
+  isoform_t shape;                /* a function pointer to the shape
+                                   * function */
+} fea_solver;
+
 
 
 /*************************************************************/
@@ -200,36 +248,12 @@ BOOL initial_data_load(char *filename,
                        elements_array **elements,
                        prescribed_boundary_array **presc_boundary);
 
- 
-
-/* function for calculation value of shape function for 10-noded
- * tetrahedra 
- * by given element el, node number i,local coordinates r,s,t,  
- * where r,s,t from [0;1] 
- * all functions are taken from the book: 
- * "The Finite Element Method for 3D Thermomechanical Applications"
- * by - Guido Dhond p.72
- */
-real isoform(int i,real r,real s,real t);
-
-
-/*
- * function for calculation derivatives of shape 
- * function of 10noded tetrahedra element
- * with respect to local coordinate system
- * shape - number of node(and corresponding shape function)
- * dof - degree of freedom, dof = 1 is r, dof = 2 is s, dof = 3 is t
- * r,s,t is [0;1] - local coordinates
- */
-real disoform(int shape,int dof,real r,real s,real t);
-/* Particular derivatives */
-real df_dr(int i, real r, real s, real t);
-real df_ds(int i, real r, real s, real t);
-real df_dt(int i, real r, real s, real t);
-
 
 /*************************************************************/
 /* Allocators for internal data structures                   */
+
+/*************************************************************/
+/* Allocators for structures with a data from file           */
 
 /* Initializa fea task structure and fill with default values */
 static fea_task* initialize_fea_task();
@@ -242,6 +266,18 @@ static elements_array* initialize_elements_array();
 /* Initialize boundary nodes array but not initialize particular nodes */
 static prescribed_boundary_array* initialize_prescribed_boundary_array();
 
+/*
+ * Constructor for the main application structure
+ * all parameters shall be properly constructed and initialized
+ * with data from file
+ */
+static fea_solver* new_fea_solver(fea_task *task,
+                                  fea_solution_params *fea_params,
+                                  nodes_array *nodes,
+                                  elements_array *elements,
+                                  prescribed_boundary_array *prscs_boundary);
+
+
 /*************************************************************/
 /* Deallocators for internal data structures                 */
 
@@ -251,10 +287,88 @@ static void free_nodes_array(nodes_array* nodes);
 static void free_elements_array(elements_array *elements);
 static void free_prescribed_boundary_array(prescribed_boundary_array* presc);
 
+/*
+ * Destructor for the main solver
+ * Will also clear all aggregated structures
+ */
+static void free_fea_solver(fea_solver* solver);
 
-/*************************************************************/
-/* Global variables                                          */
+/*
+ * A function which will be called in case of error to
+ * clear all memory occupied by internal structures.
+ * Will clear global variable global_solver in a proper way
+ * by calling free_fea_solver.
+ * Also shall clear other allocated resources
+ */
+void application_done(void);
 
+
+int parse_cmdargs(int argc, char **argv,char **filename);
+int do_main(char* filename);
+void solve( fea_task *task,
+            fea_solution_params *fea_params,
+            nodes_array *nodes,
+            elements_array *elements,
+            prescribed_boundary_array *presc_boundary);
+void dump_input_data( fea_task *task,
+                      fea_solution_params *fea_params,
+                      nodes_array *nodes,
+                      elements_array *elements,
+                      prescribed_boundary_array *presc_boundary);
+
+
+int main(int argc, char **argv)
+{
+  char* filename = 0;
+  int result = 0;
+  
+  do
+  {
+    if ( TRUE == (result = parse_cmdargs(argc, argv,&filename)))
+      break;
+    if ( TRUE == (result = do_main(filename)))
+      break;
+  } while(0);
+
+  return result;
+}
+
+int do_main(char* filename)
+{
+  /* initialize variables */
+  int result = 0;
+  fea_task *task = (fea_task *)0;
+  fea_solution_params *fea_params = (fea_solution_params*)0;
+  nodes_array *nodes = (nodes_array*)0;
+  elements_array *elements = (elements_array*)0;
+  prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)0;
+
+  /* Set the application exit handler */
+  atexit(application_done);
+  
+  /* load geometry and solution details */
+  if(!initial_data_load(filename,
+                        &task,
+                        &fea_params,
+                        &nodes,
+                        &elements,
+                        &presc_boundary))
+  {
+    printf("Error. Unable to load %s.\n",filename);
+    result = 1;
+  }
+  
+  /* solve task */
+  solve(task, fea_params, nodes, elements, presc_boundary);
+  /* deallocate resources */      
+  free_fea_task(task);
+  free_fea_solution_params(fea_params);
+  free_nodes_array(nodes);
+  free_elements_array(elements);
+  free_prescribed_boundary_array(presc_boundary);
+  
+  return result;
+}
 
 void solve( fea_task *task,
             fea_solution_params *fea_params,
@@ -262,7 +376,40 @@ void solve( fea_task *task,
             elements_array *elements,
             prescribed_boundary_array *presc_boundary)
 {
-  /* TODO: remove this, temporary code!!! */
+  /* initialize variables */
+  fea_solver *solver = NULL;
+  
+  /* Dump all data */
+  dump_input_data(task,fea_params,nodes,elements,presc_boundary);
+  /* Prepare solver instance */
+  solver = new_fea_solver(task,
+                          fea_params,
+                          nodes,
+                          elements,
+                          presc_boundary);
+  /* backup solver to the global_solver for the case of emergency exit */
+  global_solver = solver;
+  
+}
+
+
+int parse_cmdargs(int argc, char **argv,char **filename)
+{
+  if (argc < 2)
+  {
+    printf("Usage: fea_solve input_data.xml\n");
+    return 1;
+  }
+  *filename = argv[1];
+  return 0;
+}
+
+void dump_input_data( fea_task *task,
+                      fea_solution_params *fea_params,
+                      nodes_array *nodes,
+                      elements_array *elements,
+                      prescribed_boundary_array *presc_boundary)
+{
   int i,j;
   printf("nodes\n");
   for ( i = 0; i < nodes->nodes_count; ++ i)
@@ -289,68 +436,44 @@ void solve( fea_task *task,
   }
 }
 
-int parse_cmdargs(int argc, char **argv,char **filename)
+void application_done(void)
 {
-  if (argc < 2)
+  /* TODO: add additional finalization routines here */
+  if (global_solver)
   {
-    printf("Usage: fea_solve input_data.xml\n");
-    return 1;
-  }
-  *filename = argv[1];
-  return 0;
-}
-
-int do_main(char* filename)
-{
-  /* initialize variables */
-  int result = 0;
-  fea_task *task = (fea_task *)0;
-  fea_solution_params *fea_params = (fea_solution_params*)0;
-  nodes_array *nodes = (nodes_array*)0;
-  elements_array *elements = (elements_array*)0;
-  prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)0;
-
-  /* load geometry and solution details */
-  if(!initial_data_load(filename,
-                        &task,
-                        &fea_params,
-                        &nodes,
-                        &elements,
-                        &presc_boundary))
-  {
-    printf("Error. Unable to load %s.\n",filename);
-    result = 1;
-  }
-  
-  /* solve task */
-  solve(task, fea_params, nodes, elements, presc_boundary);
-  /* deallocate resources */      
-  free_fea_task(task);
-  free_fea_solution_params(fea_params);
-  free_nodes_array(nodes);
-  free_elements_array(elements);
-  free_prescribed_boundary_array(presc_boundary);
-  
-  return result;
-}
-
-int main(int argc, char **argv)
-{
-  char* filename = 0;
-  int result = 0;
-  
-  do
-  {
-    if ( TRUE == (result = parse_cmdargs(argc, argv,&filename)))
-      break;
-    if ( TRUE == (result = do_main(filename)))
-      break;
-  } while(0);
-
-  return result;
+    free_fea_solver(global_solver);
+  }   
 }
 
 
+fea_solver* new_fea_solver(fea_task *task,
+                                  fea_solution_params *fea_params,
+                                  nodes_array *nodes,
+                                  elements_array *elements,
+                                  prescribed_boundary_array *prscs_boundary)
+{
+  fea_solver* solver = malloc(sizeof(fea_solver));
+  return solver;
+}
+
+
+void free_fea_solver(fea_solver* solver)
+{
+  
+}
+
+
+
+
+
+/* function for calculation value of shape function for 10-noded
+ * tetrahedra 
+ * by given element el, node number i,local coordinates r,s,t,  
+ * where r,s,t from [0;1] 
+ * all functions are taken from the book: 
+ * "The Finite Element Method for 3D Thermomechanical Applications"
+ * by - Guido Dhond p.72
+ */
 real isoform(int i,real r,real s,real t)
 {
   switch(i)
@@ -369,19 +492,11 @@ real isoform(int i,real r,real s,real t)
   return 0;
 }
 
-
-real disoform(int shape,int dof,real r,real s,real t)
-{
-  switch(dof)
-  {
-  case 0: return df_dr(shape,r,s,t);
-  case 1: return df_ds(shape,r,s,t);
-  case 2: return df_dt(shape,r,s,t);
-  }
-  return 0;
-}
-
-
+/*
+ * Element TETRAHEDRA10, isoparametric shape function derivative
+ * with respece to the 1st variable r
+ * i - node number
+ */ 
 real df_dr(int i,real r,real s,real t)
 {
   switch(i)
@@ -400,7 +515,11 @@ real df_dr(int i,real r,real s,real t)
   return 0;
 }
 
-
+/*
+ * Element TETRAHEDRA10, isoparametric shape function derivative
+ * with respece to the 2nd variable s
+ * i - node number
+ */ 
 real df_ds(int i, real r, real s, real t)
 {
   switch(i)
@@ -419,7 +538,11 @@ real df_ds(int i, real r, real s, real t)
   return 0;
 }
 
-
+/*
+ * Element TETRAHEDRA10, isoparametric shape function derivative
+ * with respece to the 3rd variable t
+ * i - node number
+ */ 
 real df_dt(int i, real r, real s, real t)
 {
   switch(i)
@@ -437,6 +560,26 @@ real df_dt(int i, real r, real s, real t)
   }
   return 0;
 }
+
+/*
+ * function for calculation derivatives of shape 
+ * function of 10noded tetrahedra element
+ * with respect to local coordinate system
+ * shape - number of node(and corresponding shape function)
+ * dof - degree of freedom, dof = 1 is r, dof = 2 is s, dof = 3 is t
+ * r,s,t is [0;1] - local coordinates
+ */
+real disoform(int shape,int dof,real r,real s,real t)
+{
+  switch(dof)
+  {
+  case 0: return df_dr(shape,r,s,t);
+  case 1: return df_ds(shape,r,s,t);
+  case 2: return df_dt(shape,r,s,t);
+  }
+  return 0;
+}
+
 
 
 static fea_task* initialize_fea_task()
