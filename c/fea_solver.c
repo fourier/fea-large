@@ -5,7 +5,9 @@
 #ifdef USE_EXPAT
 #include <expat.h>
 #endif
-
+#ifdef DMALLOC
+#include "dmalloc.h"
+#endif
 
 /*************************************************************/
 /* Type and constants definitions                            */
@@ -341,7 +343,7 @@ int do_main(char* filename)
   prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)0;
 
   /* Set the application exit handler */
-  atexit(application_done);
+  /* atexit(application_done); */
   
   /* load geometry and solution details */
   if(!initial_data_load(filename,
@@ -354,6 +356,12 @@ int do_main(char* filename)
     printf("Error. Unable to load %s.\n",filename);
     result = 1;
   }
+  /* TODO: remove me */
+  /* free_prescribed_boundary_array(presc_boundary); */
+  /* free_elements_array(elements); */
+  /* free_nodes_array(nodes); */
+  /* free_fea_solution_params(fea_params); */
+  /* free_fea_task(task); */
   
   /* solve task */
   solve(task, fea_params, nodes, elements, presc_boundary);
@@ -383,6 +391,9 @@ void solve( fea_task *task,
 
   /* Create elements database */
   solver_create_element_database(solver);
+
+  free_fea_solver(solver);
+  global_solver = (fea_solver*)0;
 }
 
 
@@ -435,7 +446,11 @@ void application_done(void)
   if (global_solver)
   {
     free_fea_solver(global_solver);
-  }   
+  }
+#ifdef DMALLOC
+  dmalloc_shutdown();
+#endif
+  
 }
 
 
@@ -470,6 +485,7 @@ void free_fea_solver(fea_solver* solver)
   free_nodes_array(solver->nodes);
   free_elements_array(solver->elements);
   free_prescribed_boundary_array(solver->presc_boundary);
+  free(solver);
 }
 
 /*
@@ -766,9 +782,9 @@ static nodes_array* new_nodes_array()
 /* carefully deallocate nodes array */
 static void free_nodes_array(nodes_array* nodes)
 {
+  int counter = 0;
   if (nodes)
   {
-    int counter = 0;
     if (nodes->nodes_count && nodes->nodes)
     {
       for (; counter < nodes->nodes_count; ++ counter)
@@ -786,7 +802,7 @@ static elements_array* new_elements_array()
   /* allocate memory */
   elements_array *elements = (elements_array*)malloc(sizeof(elements_array));
   /* set zero values */
-  elements->elements = (void*)0;
+  elements->elements = (int**)0;
   elements->elements_count = 0;
   return elements;
 }
@@ -813,7 +829,7 @@ static prescribed_boundary_array* new_prescribed_boundary_array()
   prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)
     malloc(sizeof(prescribed_boundary_array));
   /* set zero values */
-  presc_boundary->prescribed_nodes = (void*)0;
+  presc_boundary->prescribed_nodes = (prescibed_boundary_node*)0;
   presc_boundary->prescribed_nodes_count = 0;
   return presc_boundary;
 }
@@ -1010,7 +1026,8 @@ void expat_end_tag_handler(void *userData,
   if (tag != UNKNOWN_TAG)
     process_end_tag(data,tag);
   /* clear tag text data at tag close */
-  free(data->current_text);
+  if (data->current_text)
+    free(data->current_text);
   data->current_text = (char*)0;
   data->current_size = 0;
 }
@@ -1099,6 +1116,7 @@ static BOOL expat_data_load(char *filename,
     free(file_contents);
     return FALSE;
   }
+  fclose(xml_document_file);
 
   /* allocate parse data */
   parse.task = new_fea_task();
@@ -1110,12 +1128,13 @@ static BOOL expat_data_load(char *filename,
   parse.current_size = 0;
   parse.current_text = (char*)0;
   /* set user data */
-  XML_SetUserData(parser,&parse);  
+  XML_SetUserData(parser,&parse);
 
   /* call parser */
   status = XML_Parse(parser,file_contents,(int)read_bytes,1);
   free(file_contents);
-
+  XML_ParserFree(parser);
+  
   *task = parse.task;
   *fea_params = parse.fea_params;
   *nodes = parse.nodes;
@@ -1159,7 +1178,8 @@ void process_model_type(parse_data* data, const XML_Char **atts)
       {
         printf("unknown model type %s\n",text);
       }
-      free(text);
+      if(text)
+        free(text);
     }
   }
 }
@@ -1174,7 +1194,8 @@ void process_model_params(parse_data* data, const XML_Char **atts)
     atts++;
     text = trim_whitespaces(*atts,strlen(*atts));
     data->task->model.parameters[count] = atof(text);
-    free(text);
+    if(text)
+      free(text);
     count++;
   }
 }
@@ -1189,26 +1210,30 @@ void process_solution(parse_data* data, const XML_Char **atts)
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->task->modified_newton = (!istrcmp(text,"yes") || !istrcmp(text,"true"))? TRUE: FALSE;
-      free(text);
+      if (text)
+        free(text);
     }
     else if (check_attribute("task-type",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       if (!istrcmp(text,"CARTESIAN3D"))
         data->task->type = CARTESIAN3D;
-      free(text);
+      if (text)
+        free(text);
     }
     else if (check_attribute("load-increments-count",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->task->load_increments_count = atoi(text);
-      free(text);
+      if (text)
+        free(text);
     }
     else if (check_attribute("desired-tolerance",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->task->desired_tolerance = atof(text);
-      free(text);
+      if (text)
+        free(text);
     }
   }
   data->parent_tag = SOLUTION;
@@ -1225,25 +1250,29 @@ void process_element_type(parse_data* data, const XML_Char **atts)
       text = trim_whitespaces(*atts,strlen(*atts));
       if (!istrcmp(text,"TETRAHEDRA10"))
         data->task->ele_type = TETRAHEDRA10;
-      free(text);
+      if (text)
+        free(text);
     }
     else if (check_attribute("nodes-count",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->fea_params->nodes_per_element = atoi(text);
-      free(text);
+      if (text)
+        free(text);
     }
     else if (check_attribute("nodes-count",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->fea_params->nodes_per_element = atoi(text);
-      free(text);
+      if (text)
+        free(text);
     }
     else if (check_attribute("gauss-nodes-count",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->fea_params->gauss_nodes_count = atoi(text);
-      free(text);
+      if (text)
+        free(text);
     }
   }
 }
@@ -1258,7 +1287,8 @@ void process_line_search(parse_data* data, const XML_Char **atts)
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->task->linesearch_max = atoi(text);
-      free(text);
+      if (text)
+        free(text);
     }
   }
 }
@@ -1273,7 +1303,8 @@ void process_arc_length(parse_data* data, const XML_Char **atts)
     {
       text = trim_whitespaces(*atts,strlen(*atts));
       data->task->arclength_max = atoi(text);
-      free(text);
+      if(text)
+        free(text);
     }
   }
 }
@@ -1297,7 +1328,8 @@ void process_nodes(parse_data* data, const XML_Char **atts)
           (real**)malloc(data->nodes->nodes_count*sizeof(real*));
         for (; i < data->nodes->nodes_count; ++ i)
           data->nodes->nodes[i] = (real*)malloc(MAX_DOF*sizeof(real));
-        free(text);
+        if (text)
+          free(text);
       }
     }
     /* set parent tag to 'nodes' to recoginze an appropriate 'node' tag */
@@ -1319,25 +1351,25 @@ void process_node(parse_data* data, const XML_Char **atts)
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         id = atoi(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("x",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         dofs[0] = atof(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("y",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         dofs[1] = atof(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("z",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         dofs[2] = atof(text);
-        free(text);
+        if (text) free(text);
       }
     }
     if (id != -1)
@@ -1365,7 +1397,7 @@ void process_elements(parse_data* data, const XML_Char **atts)
         for (; i < data->elements->elements_count; ++ i)
           data->elements->elements[i] =
             (int*)malloc(data->fea_params->nodes_per_element*sizeof(int));
-        free(text);
+        if (text) free(text);
       }
     }
     /* set parent tag to 'ELEMENTS' to recoginze an appropriate 'ELEMENT' tag */
@@ -1406,13 +1438,13 @@ void process_element(parse_data* data, const XML_Char **atts)
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         id = atoi(text);
-        free(text);
+        if (text) free(text);
       }
       if (-1 != (pos = node_position_from_attr(&atts)))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         element[pos] = atoi(text); 
-        free(text);
+        if (text) free(text);
       }
     }
     if (id != -1)
@@ -1440,7 +1472,7 @@ void process_prescribed_displacements(parse_data* data, const XML_Char **atts)
         /* allocate storage for prescribed nodes */
         data->presc_boundary->prescribed_nodes =  
           (prescibed_boundary_node*)malloc(size*sizeof(prescibed_boundary_node));
-        free(text);
+        if (text) free(text);
       }
     }
     /* set parent tag to 'nodes' to recoginze an appropriate 'node' tag */
@@ -1463,38 +1495,38 @@ void process_prescribed_node(parse_data* data, const XML_Char **atts)
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         id = atoi(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("node-id",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         node.node_number = atoi(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("x",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         node.values[0] = atof(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("y",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         node.values[1] = atof(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("z",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         node.values[2] = atof(text);
-        free(text);
+        if (text) free(text);
       }
       else if (check_attribute("type",&atts))
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         /* TODO: add proper conversion */
         node.type= (prescribed_boundary_type)atoi(text);
-        free(text);
+        if (text) free(text);
       }
     }
     if (id != -1)
@@ -1521,10 +1553,10 @@ void process_begin_tag(parse_data* data, int tag,const XML_Char **atts)
     process_element_type(data,atts);
     break;
   case LINE_SEARCH:
-    process_line_search(data,atts);    
+    process_line_search(data,atts);
     break;
   case ARC_LENGTH:
-    process_arc_length(data,atts);    
+    process_arc_length(data,atts);
     break;
   case INPUT_DATA:
     data->parent_tag = INPUT_DATA;
