@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
+#include <float.h>
 #ifdef USE_EXPAT
 #include <expat.h>
 #endif
@@ -21,7 +23,20 @@ typedef int BOOL;
 #define MAX_MATERIAL_PARAMETERS 10
 
 /* Redefine type of the floating point values */
+#ifdef SINGLE
+typedef float real;
+#else /* not SINGLE */
 typedef double real;
+#endif /* not SINGLE */
+
+/* Equals macro for real values */
+#ifdef SINGLE
+#define EQL(x,y) (fabs((x)-(y))<= FLT_MIN)
+#else
+#define EQL(x,y) (fabs((x)-(y))<= DBL_MIN)
+#endif
+
+#define DELTA(i,j) ((i)==(j) ? 1 : 0)
 
 /*
  * A pointer to the the isoparametric shape
@@ -288,18 +303,35 @@ static void free_fea_solver(fea_solver* solver);
 void application_done(void);
 
 
+/*
+ * Parse command line parameters and return input file name
+ * into the filename variable
+ */
 int parse_cmdargs(int argc, char **argv,char **filename);
+
+/*
+ * Real main function with input filename as a parameter
+ */
 int do_main(char* filename);
+
+/*
+ * Solver function which shall be called
+ * when all data read to an appropriate structures
+ */
 void solve( fea_task *task,
             fea_solution_params *fea_params,
             nodes_array *nodes,
             elements_array *elements,
             prescribed_boundary_array *presc_boundary);
+
+#ifndef _NDEBUG
+/* Dump input data to check if parser works correctly */
 void dump_input_data( fea_task *task,
                       fea_solution_params *fea_params,
                       nodes_array *nodes,
                       elements_array *elements,
                       prescribed_boundary_array *presc_boundary);
+#endif
 
 /*************************************************************/
 /* Functions for fea_solver structure                        */
@@ -309,12 +341,33 @@ void dump_input_data( fea_task *task,
  * of gauss nodes for particular element type.
  * This function is used on a construction phase
  */
-static void solver_create_element_params(fea_solver* solver);
+static void solver_create_element_params(fea_solver* self);
 
 /* Allocates memory and construct elements database for solver */
-static void solver_create_element_database(fea_solver* solver);
+static void solver_create_element_database(fea_solver* self);
 /* Destructor for the element database */
-static void solver_free_element_database(fea_solver* solver);
+static void solver_free_element_database(fea_solver* self);
+
+/*
+ * Constructs material tensor of 4th rank
+ * by given deformation gradient graddef into the output array
+ * ctensor
+ */
+static void solver_ctensor(fea_solver* self,
+                           real (*graddef)[MAX_DOF],
+                           real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
+
+/*************************************************************/
+/* Auxulary functions                                        */
+
+/* Calculates the determinant of the matrix 3x3 */
+real det3x3(real (*matrix3x3)[3]);
+
+/*
+ * Calculates in-place inverse of the matrix 3x3
+ * Returns FALSE if the matrix is ill-formed
+ */
+BOOL inv3x3(real (*matrix3x3)[3]);
 
 int main(int argc, char **argv)
 {
@@ -356,12 +409,6 @@ int do_main(char* filename)
     printf("Error. Unable to load %s.\n",filename);
     result = 1;
   }
-  /* TODO: remove me */
-  /* free_prescribed_boundary_array(presc_boundary); */
-  /* free_elements_array(elements); */
-  /* free_nodes_array(nodes); */
-  /* free_fea_solution_params(fea_params); */
-  /* free_fea_task(task); */
   
   /* solve task */
   solve(task, fea_params, nodes, elements, presc_boundary);
@@ -377,9 +424,10 @@ void solve( fea_task *task,
 {
   /* initialize variables */
   fea_solver *solver = (fea_solver*)0;
-  
-  /* Dump all data */
+#ifndef _NDEBUG
+  /* Dump all data in debug version */
   dump_input_data(task,fea_params,nodes,elements,presc_boundary);
+#endif
   /* Prepare solver instance */
   solver = new_fea_solver(task,
                           fea_params,
@@ -391,6 +439,7 @@ void solve( fea_task *task,
 
   /* Create elements database */
   solver_create_element_database(solver);
+
 
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -408,6 +457,7 @@ int parse_cmdargs(int argc, char **argv,char **filename)
   return 0;
 }
 
+#ifndef _NDEBUG
 void dump_input_data( fea_task *task,
                       fea_solution_params *fea_params,
                       nodes_array *nodes,
@@ -439,6 +489,7 @@ void dump_input_data( fea_task *task,
            presc_boundary->prescribed_nodes[i].type);
   }
 }
+#endif
 
 void application_done(void)
 {
@@ -492,7 +543,7 @@ void free_fea_solver(fea_solver* solver)
  * Creates a particular gauss node for the element
  * with index element_index and gauss node number gauss_node_index
  */
-static gauss_node *solver_new_gauss_node(fea_solver* solver,
+static gauss_node *solver_new_gauss_node(fea_solver* self,
                                          int gauss_node_index)
 {
   gauss_node* node = (gauss_node*)0;
@@ -500,24 +551,24 @@ static gauss_node *solver_new_gauss_node(fea_solver* solver,
   real r,s,t;
   /* Check for array bounds*/
   if (gauss_node_index >= 0 &&
-      gauss_node_index < solver->fea_params->gauss_nodes_count)
+      gauss_node_index < self->fea_params->gauss_nodes_count)
   {
     node = malloc(sizeof(gauss_node));
     /* set the weight for this gauss node */
-    node->weight = solver->elements_db.gauss_nodes_data[gauss_node_index][0];
+    node->weight = self->elements_db.gauss_nodes_data[gauss_node_index][0];
     /* set shape function values and their derivatives for this node */
-    node->forms = malloc(sizeof(real)*solver->fea_params->nodes_per_element);
-    node->dforms = malloc(sizeof(real*)*solver->task->dof);
-    for ( i = 0; i < solver->task->dof; ++ i)
-      node->dforms[i] = malloc(sizeof(real)*solver->fea_params->nodes_per_element);
-    for ( i = 0; i < solver->fea_params->nodes_per_element; ++ i)
+    node->forms = malloc(sizeof(real)*(self->fea_params->nodes_per_element));
+    node->dforms = malloc(sizeof(real*)*(self->task->dof));
+    for ( i = 0; i < self->task->dof; ++ i)
+      node->dforms[i] = malloc(sizeof(real)*(self->fea_params->nodes_per_element));
+    for ( i = 0; i < self->fea_params->nodes_per_element; ++ i)
     {
-      r = solver->elements_db.gauss_nodes_data[gauss_node_index][1];
-      s = solver->elements_db.gauss_nodes_data[gauss_node_index][2];
-      t = solver->elements_db.gauss_nodes_data[gauss_node_index][3];
-      node->forms[i] = solver->shape(i,r,s,t);
-      for ( j = 0; j < solver->task->dof; ++ j)
-        node->dforms[j][i] = solver->dshape(i,j,r,s,t);
+      r = self->elements_db.gauss_nodes_data[gauss_node_index][1];
+      s = self->elements_db.gauss_nodes_data[gauss_node_index][2];
+      t = self->elements_db.gauss_nodes_data[gauss_node_index][3];
+      node->forms[i] = self->shape(i,r,s,t);
+      for ( j = 0; j < self->task->dof; ++ j)
+        node->dforms[j][i] = self->dshape(i,j,r,s,t);
     }
 
   }
@@ -525,7 +576,7 @@ static gauss_node *solver_new_gauss_node(fea_solver* solver,
 }
 
 /* Deallocate gauss node */
-static void solver_free_gauss_node(fea_solver *solver,
+static void solver_free_gauss_node(fea_solver *self,
                                    gauss_node *node)
 {
   int i;
@@ -533,7 +584,7 @@ static void solver_free_gauss_node(fea_solver *solver,
   {
     /* clear forms and dforms arrays */
     free(node->forms);
-    for ( i = 0; i < solver->task->dof; ++ i)
+    for ( i = 0; i < self->task->dof; ++ i)
       free(node->dforms[i]);
     free(node->dforms);
     /* free the node itself */
@@ -542,19 +593,19 @@ static void solver_free_gauss_node(fea_solver *solver,
 }
   
 
-void solver_create_element_database(fea_solver* solver)
+void solver_create_element_database(fea_solver* self)
 {
   int gauss;
-  int gauss_count = solver->fea_params->gauss_nodes_count;
+  int gauss_count = self->fea_params->gauss_nodes_count;
   /* Create database only if not created yet */
-  if (!solver->elements_db.gauss_nodes)
+  if (!self->elements_db.gauss_nodes)
   {
     /* allocate memory for gauss nodes array */
-    solver->elements_db.gauss_nodes =
+    self->elements_db.gauss_nodes =
       malloc(sizeof(gauss_node*)*gauss_count);
     for (gauss = 0; gauss < gauss_count; ++ gauss)
-      solver->elements_db.gauss_nodes[gauss] =
-        solver_new_gauss_node(solver,gauss);
+      self->elements_db.gauss_nodes[gauss] =
+        solver_new_gauss_node(self,gauss);
     
   }
 }
@@ -590,7 +641,25 @@ void solver_create_element_params(fea_solver* solver)
   };
   
 }
-                         
+
+void solver_ctensor(fea_solver* self,
+                    real (*graddef)[MAX_DOF],
+                    real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+{
+  int i,j,k,l;
+  real lambda,mu;
+  lambda = self->task->model.parameters[0];
+  mu = self->task->model.parameters[1];
+  for ( i = 0; i < MAX_DOF; ++ i )
+    for ( j = 0; j < MAX_DOF; ++ j )
+      for ( k = 0; k < MAX_DOF; ++ k )
+        for ( l = 0; l < MAX_DOF; ++ l )
+          ctensor[i][j][k][l] = 
+            lambda * DELTA (i, j) * DELTA (k, l)    \
+            + mu * DELTA (i, k) * DELTA (j, l)      \
+            + mu * DELTA (i, l) * DELTA (j, k);
+}
+
 
 
 /* function for calculation value of shape function for 10-noded
@@ -845,6 +914,44 @@ static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
     free(presc);
   }
 }
+
+real det3x3(real (*m)[3])
+{
+  real result;
+  result = m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) - 
+    m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + 
+    m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  return result;
+}
+
+BOOL inv3x3(real (*m)[3])
+{
+  real m00,m01,m02,m10,m11,m12,m20,m21,m22;
+  real det = det3x3(m);
+  if (EQL(det,0.0))
+    return FALSE;
+	/* calculate components */
+	/* first row */
+  m00 = (m[1][1]*m[2][2]-m[1][2]*m[2][1])/det;
+	m01 = (m[0][2]*m[2][1]-m[0][1]*m[2][2])/det;
+	m02 = (m[0][1]*m[1][2]-m[0][2]*m[1][1])/det;
+	/* second row */
+	m10 = (m[1][2]*m[2][0]-m[1][0]*m[2][2])/det;
+	m11 = (m[0][0]*m[2][2]-m[0][2]*m[2][0])/det;
+	m12 = (m[0][2]*m[1][0]-m[0][0]*m[1][2])/det;
+	/* third row */
+	m20 = (m[1][0]*m[2][1]-m[1][1]*m[2][0])/det;
+	m21 = (m[0][1]*m[2][0]-m[0][0]*m[2][1])/det;
+	m22 = (m[0][0]*m[1][1]-m[0][1]*m[1][0])/det;
+  
+  /* perform in-place substitution of the result */
+	m[0][0] = m00; 	m[0][1] = m01; 	m[0][2] = m02;
+	m[1][0] = m10; 	m[1][1] = m11; 	m[1][2] = m12;
+	m[2][0] = m20;	m[2][1] = m21;	m[2][2] = m22;
+  
+  return TRUE;
+}
+
 
 /* Case-insensitive string comparsion procedure */
 int istrcmp(s1,s2)
