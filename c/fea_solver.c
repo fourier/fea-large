@@ -38,6 +38,7 @@ typedef double real;
 
 #define DELTA(i,j) ((i)==(j) ? 1 : 0)
 
+
 /*
  * A pointer to the the isoparametric shape
  * function
@@ -61,32 +62,35 @@ struct fea_solver_tag* global_solver;
  * layout: [number_of_nodes x 4], with values:               
  * {weight, r,s,t}                                           
  * per gauss node. For 2d cases t = 0
+ * Note what divisor 6 for tetraheadras and 2 for triangles
+ * shall be already taken into account in weights.
+ * See below.
  */
 
 /* Element: TETRAHEDRA10, 4 nodes */
-real gauss_nodes4_tetr10[4][4] = { {1/4.,        /* weight */
+real gauss_nodes4_tetr10[4][4] = { {(1/4.)/6.,        /* weight */
                                     0.58541020,  /* a */
                                     0.13819660,  /* b */
                                     0.13819660}, /* b */
-                                   {1/4.,
+                                   {(1/4.)/6.,
                                     0.13819660,  /* b */
                                     0.58541020,  /* a */
                                     0.13819660}, /* b */
-                                   {1/4.,
+                                   {(1/4.)/6.,
                                     0.13819660,  /* b */
                                     0.13819660,  /* b */
                                     0.58541020}, /* a */
-                                   {1/4.,
+                                   {(1/4.)/6.,
                                     0.13819660,  /* b */
                                     0.13819660,  /* b */
                                     0.13819660}  /* b */
 };
 /* Element: TETRAHEDRA10, 5 nodes */
-real gauss_nodes5_tetr10[5][4] = { {-4/5., 1/4., 1/4., 1/4.},
-                                   {9/20., 1/2., 1/6., 1/6.},
-                                   {9/20., 1/6., 1/2., 1/6.},
-                                   {9/20., 1/6., 1/6., 1/2.},
-                                   {9/20., 1/6., 1/6., 1/6.} };
+real gauss_nodes5_tetr10[5][4] = { {(-4/5.)/6., 1/4., 1/4., 1/4.},
+                                   {(9/20.)/6., 1/2., 1/6., 1/6.},
+                                   {(9/20.)/6., 1/6., 1/2., 1/6.},
+                                   {(9/20.)/6., 1/6., 1/6., 1/2.},
+                                   {(9/20.)/6., 1/6., 1/6., 1/6.} };
 
 
 
@@ -211,6 +215,26 @@ typedef struct elements_database_tag {
                                    * coefficients and weights */  
   gauss_node **gauss_nodes;   /* Gauss nodes array */
 } elements_database;
+
+/*
+ * Matrix of gradients of the shape functions with respect to
+ * global coordinates
+ * Calculated in one node(gauss node) of an element
+ * Layout: [d.o.f x nodes_count]
+ *              dN_j(r,s,t)
+ * grad[i][j] = -----------
+ *                  dX_i
+ * 
+ * X_1 = x, X_2 = y, X_3 = z coordinates
+ * 
+ */
+typedef struct shape_gradients_tag {
+  real **grad;                  /* array of derivatives of shape functions
+                                 * [dof x nodes_per_element] */
+  real detJ;                    /* determinant of the Jacobi matrix */
+} shape_gradients;
+
+
 
 /*
  * A main application structure which shall contain all
@@ -357,6 +381,33 @@ static void solver_ctensor(fea_solver* self,
                            real (*graddef)[MAX_DOF],
                            real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
 
+/*
+ * Returns a particular component of a node with local index 'node'
+ * in element with index 'element' for the d.o.f. 'dof'
+ */
+static real solver_node_dof(fea_solver* self,
+                            int element,
+                            int node,
+                            int dof)
+{
+  return self->nodes->nodes[self->elements->elements[element][node]][dof];
+}
+
+
+/*
+ * Constructor for the shape functions gradients array
+ * element - index of the element to calculate in
+ * gauss - index of gauss node
+ */
+static shape_gradients* solver_new_shape_gradients(fea_solver* self,
+                                                   int element,
+                                                   int gauss);
+/* Destructor for the shape gradients array */
+static void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads);
+
+/* Create and distribute local stiffness matrix for the element */
+static void solver_local_stiffness(fea_solver* self,int element);
+
 /*************************************************************/
 /* Auxulary functions                                        */
 
@@ -366,8 +417,9 @@ real det3x3(real (*matrix3x3)[3]);
 /*
  * Calculates in-place inverse of the matrix 3x3
  * Returns FALSE if the matrix is ill-formed
+ * det shall store a determinant of the matrix
  */
-BOOL inv3x3(real (*matrix3x3)[3]);
+BOOL inv3x3(real (*matrix3x3)[3], real* det);
 
 int main(int argc, char **argv)
 {
@@ -423,6 +475,7 @@ void solve( fea_task *task,
             prescribed_boundary_array *presc_boundary)
 {
   /* initialize variables */
+  int i;
   fea_solver *solver = (fea_solver*)0;
 #ifndef _NDEBUG
   /* Dump all data in debug version */
@@ -440,6 +493,12 @@ void solve( fea_task *task,
   /* Create elements database */
   solver_create_element_database(solver);
 
+  /* Create a global stiffness matrix */
+  
+  /* loop by elements - create local stiffnesses and redistribute them
+   * in the global stiffness matrix */
+  for ( i = 0; i < solver->elements->elements_count; ++ i)
+    solver_local_stiffness(solver,i);
 
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -641,6 +700,284 @@ void solver_create_element_params(fea_solver* solver)
   };
   
 }
+#ifndef _NDEBUG
+static void solver_dump_shape_gradients(fea_solver* self,
+                                        shape_gradients* grads,
+                                        int element,
+                                        int gauss,
+                                        real (*J)[MAX_DOF])
+{
+  int i,j;
+  printf("\nElement %d:\n",element);
+  for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+    printf("%d ",self->elements->elements[element][j]);
+  printf("\nNodes:\n");
+  for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+  {
+    for ( i = 0; i < MAX_DOF; ++ i)
+      printf("%f ",self->nodes->nodes[self->elements->elements[element][j]][i]);
+    printf("\n");
+  }
+  printf("\nGauss node %d:\n",gauss);
+  for ( i = 0; i < MAX_DOF; ++ i)
+    printf("%f ",self->elements_db.gauss_nodes_data[gauss][i+1]);
+  printf("\n\nDeterminant of Jacobi matrix(det(J): %f\n",grads->detJ);
+    
+  printf("\nInverse Jacobi matrix(J^-1):\n");
+  for ( i = 0; i < MAX_DOF; ++ i)
+  {
+    for ( j = 0; j < MAX_DOF; ++ j)
+      printf("%f ",J[i][j]);
+    printf("\n");
+  }
+  printf("\nMatrix of gradients:\n");
+  for ( i = 0; i < MAX_DOF; ++ i)
+  {
+    for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+      printf("%.5f ",grads->grad[i][j]);
+    printf("\n");
+  }  
+}
+#endif
+
+shape_gradients* solver_new_shape_gradients(fea_solver* self,
+                                                   int element,
+                                                   int gauss)
+{
+  int i,j,k;
+  int row_size;
+  real detJ;
+  /* J is a Jacobi matrix of transformation btw local and global */
+  /* coordinate systems */
+  real J[MAX_DOF][MAX_DOF];
+  shape_gradients* grads = (shape_gradients*)0;
+
+  /* Fill an array using Bonet & Wood 7.6(a,b) p.198, 1st edition */
+  /* also see Zienkiewitz v1, 6th edition, p.146-147 */
+
+  for (i = 0; i < MAX_DOF; ++ i)
+    memset(&J[i],0,sizeof(real)*MAX_DOF);
+  /* First, fill the Jacobi matrix (3x3) */
+  /* I = 1..n, n - number of nodes per element
+   * x_I, y_I, z_I - nodal coordinates for the element
+   *           dN_1(r,s,t)            dN_n(r,s,t)     
+   * J(1,1) =  ---------- * x_1 + ... ---------- * x_n
+   *               dr                      dr
+   *
+   *           dN_1(r,s,t)            dN_n(r,s,t)     
+   * J(1,2) =  ---------- * y_1 + ... ---------- * y_n
+   *               dr                      dr
+   *
+   *           dN_1(r,s,t)            dN_n(r,s,t)     
+   * J(2,1) =  ---------- * x_1 + ... ---------- * x_n
+   *               ds                      ds
+   * ...
+   */
+  for (i = 0; i < MAX_DOF; ++ i)
+    for (j = 0; j < MAX_DOF; ++ j)
+    {
+      for (k = 0; k < self->fea_params->nodes_per_element; ++ k)
+        J[i][j] += self->elements_db.gauss_nodes[gauss]->dforms[i][k]* \
+          solver_node_dof(self,element,k,j);
+    }
+  if (inv3x3(J,&detJ))                /* inverse exists */
+  {
+    /* Allocate memory for shape gradients */
+    grads = (shape_gradients*)malloc(sizeof(shape_gradients));
+    grads->grad = (real**)malloc(sizeof(real*)*(self->task->dof));
+    row_size = sizeof(real)*(self->fea_params->nodes_per_element);
+    for (i = 0; i < self->task->dof; ++ i)
+    {
+      grads->grad[i] = (real*)malloc(row_size);
+      memset(grads->grad[i],0,row_size);
+    }
+    /* Store determinant of the Jacobi matrix */
+    grads->detJ = detJ;
+    
+    /* [ dN/dx ]           [ dN/dr ] */
+    /* [ dN/dy ]  = J^-1 * [ dN/ds ] */
+    /* [ dN/dz ]           [ dN/dt ] */
+    for ( i = 0; i < MAX_DOF; ++ i)
+      for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+        for ( k = 0; k < MAX_DOF; ++ k)
+          grads->grad[i][j] += J[i][k]* \
+            self->elements_db.gauss_nodes[gauss]->dforms[k][j];
+#ifndef _NDEBUG
+    /* Dump results */
+    solver_dump_shape_gradients(self,grads,element,gauss,J);
+#endif
+  }
+
+  return grads;
+}
+
+/* Destructor for the shape gradients array */
+void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads)
+{
+  int i;
+  /* for (i = 0; i < self->fea_params->nodes_per_element; ++ i */
+  for (i = 0; i < self->task->dof; ++ i)
+    free(grads->grad[i]);
+  free(grads->grad);
+  grads->grad = (real**)0;
+}
+
+#ifndef _NDEBUG
+void solver_dump_local_stiffness(fea_solver* self,real **stiff,int el)
+{
+  int i,j;
+  int size = self->fea_params->nodes_per_element*self->task->dof;
+  printf("\nLocal stiffness matrix for element %d:\n",el); 
+  for ( i = 0; i < size; ++ i)
+  {
+    for ( j = 0; j < size; ++ j)
+      printf("%.5f ",stiff[i][j]);
+    printf("\n");
+  }
+}
+#endif
+
+#ifndef _NDEBUG
+void matrix_tensor_mapping(int I, int* i, int* j)
+{
+  switch (I)
+  {
+  case 0:
+    *i = 0;
+    *j = 0;
+    break;
+  case 1:
+    *i = 1;
+    *j = 1;
+    break;
+  case 2:
+    *i = 2;
+    *j = 2;
+    break;
+  case 3:
+    *i = 0;
+    *j = 1;
+    break;
+  case 4:
+    *i = 1;
+    *j = 2;
+    break;
+  case 5:
+    *i = 0;
+    *j = 2;
+  }
+}
+
+void dump_ctensor_as_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+{
+  int I,J,i,j,k,l;
+  printf("\nConstitutive matrix:\n"); 
+  for (I = 0; I < 6; ++ I)
+  {
+    matrix_tensor_mapping(I,&i,&j);
+    for (J = 0; J < 6;++ J)
+    {
+      matrix_tensor_mapping(J,&k,&l);
+      printf("%f ",ctensor[i][j][k][l]);
+    }
+    printf("\n");
+  }
+}
+#endif
+
+
+void solver_local_stiffness(fea_solver* self,int element)
+{
+  /* matrix of gradients of shape functions */
+  shape_gradients* grads = (shape_gradients*)0;
+  int gauss,a,b,i,j,k,l,I,J,globalI,globalJ;
+  real sum;
+  /* size of a local stiffness matrix */
+  int size;
+  /* number of nodes per element */
+  int nelem;
+  /* current number of d.o.f */
+  int dof;
+  /* local stiffness matrix */
+  real **stiff = (real**)0;
+  /* deformation gradient */
+  real graddef[MAX_DOF][MAX_DOF];
+  /* C tensor depending on material model */
+  real ctens[MAX_DOF][MAX_DOF][MAX_DOF][MAX_DOF];
+  
+  /* allocate memory for a local stiffness matrix */
+  size = self->fea_params->nodes_per_element*self->task->dof;
+  stiff = (real**)malloc(sizeof(real*)*size);
+  for (i = 0; i < size; ++ i)
+  {
+    stiff[i] = (real*)malloc(sizeof(real)*size);
+    memset(stiff[i],0,sizeof(real)*size);
+  }
+  
+  /* obtain a C tensor */
+  solver_ctensor(self,graddef,ctens);
+  
+#ifndef _NDEBUG  
+  dump_ctensor_as_matrix(ctens);
+#endif
+  
+  dof = self->task->dof;
+  nelem = self->fea_params->nodes_per_element;
+  
+  /* loop by gauss nodes - numerical integration */
+  for (gauss = 0; gauss < self->fea_params->gauss_nodes_count ; ++ gauss)
+  {
+    grads = solver_new_shape_gradients(self,element,gauss);
+    if (grads)
+    {
+      /* Construct components of stiffness matrix in
+       * indical form using Bonet & Wood 7.35 p.207, 1st edition */
+      
+      /* loop for nodes */
+      for ( a = 0; a < nelem; ++ a)
+        for (b = 0; b < nelem; ++ b)
+        {
+          /* loop for d.o.f in a stiffness matrix block [K_{ab}]ij, 3x3 */
+          for (i = 0; i < dof; ++ i)
+            for (j = 0; j < dof; ++ j)
+            {
+              /* indicies in a local stiffness matrix */
+              I = a*dof + i;
+              J = b*dof + j;
+              sum = 0.0;
+              /* sum of particular derivatives and components of C tensor */
+              for (k = 0; k < dof; ++ k)
+                for (l = 0; l < dof; ++ l)
+                  sum += grads->grad[k][a]*ctens[i][k][j][l]*grads->grad[l][b];
+              /*
+               * multiply by volume of an element = det(J)
+               * where divider 6 or 2 or others already accounted in
+               * weights of gauss nodes
+               */
+              sum *= fabs(grads->detJ);
+              /* ... and weight of the gauss nodes for  */
+              sum *= self->elements_db.gauss_nodes[gauss]->weight;
+              /* append to the local stiffness */
+              stiff[I][J] += sum;
+              /* finally distribute to the global matrix */
+              globalI = self->elements->elements[element][a]*dof + i;
+              globalJ = self->elements->elements[element][b]*dof + j;
+              /* M(globalI,globalJ) = M(globalI,globalJ) + stiff[I][J] */
+            }
+        }
+    }
+    solver_free_shape_gradients(self,grads);
+  }
+  
+#ifndef _NDEBUG
+  solver_dump_local_stiffness(self,stiff,element);
+#endif
+  
+  /* clear local stiffness */
+  for ( i = 0; i < size; ++ i )
+    free(stiff[i]);
+  free(stiff);
+}
 
 void solver_ctensor(fea_solver* self,
                     real (*graddef)[MAX_DOF],
@@ -656,9 +993,11 @@ void solver_ctensor(fea_solver* self,
         for ( l = 0; l < MAX_DOF; ++ l )
           ctensor[i][j][k][l] = 
             lambda * DELTA (i, j) * DELTA (k, l)    \
-            + mu * DELTA (i, k) * DELTA (j, l)      \
+            + mu * DELTA (i, k) * DELTA (j, l)    \
             + mu * DELTA (i, l) * DELTA (j, k);
 }
+
+
 
 
 
@@ -924,25 +1263,25 @@ real det3x3(real (*m)[3])
   return result;
 }
 
-BOOL inv3x3(real (*m)[3])
+BOOL inv3x3(real (*m)[3],real* det)
 {
   real m00,m01,m02,m10,m11,m12,m20,m21,m22;
-  real det = det3x3(m);
-  if (EQL(det,0.0))
+  *det = det3x3(m);
+  if (EQL(*det,0.0))
     return FALSE;
 	/* calculate components */
 	/* first row */
-  m00 = (m[1][1]*m[2][2]-m[1][2]*m[2][1])/det;
-	m01 = (m[0][2]*m[2][1]-m[0][1]*m[2][2])/det;
-	m02 = (m[0][1]*m[1][2]-m[0][2]*m[1][1])/det;
+  m00 = (m[1][1]*m[2][2]-m[1][2]*m[2][1])/(*det);
+	m01 = (m[0][2]*m[2][1]-m[0][1]*m[2][2])/(*det);
+	m02 = (m[0][1]*m[1][2]-m[0][2]*m[1][1])/(*det);
 	/* second row */
-	m10 = (m[1][2]*m[2][0]-m[1][0]*m[2][2])/det;
-	m11 = (m[0][0]*m[2][2]-m[0][2]*m[2][0])/det;
-	m12 = (m[0][2]*m[1][0]-m[0][0]*m[1][2])/det;
+	m10 = (m[1][2]*m[2][0]-m[1][0]*m[2][2])/(*det);
+	m11 = (m[0][0]*m[2][2]-m[0][2]*m[2][0])/(*det);
+	m12 = (m[0][2]*m[1][0]-m[0][0]*m[1][2])/(*det);
 	/* third row */
-	m20 = (m[1][0]*m[2][1]-m[1][1]*m[2][0])/det;
-	m21 = (m[0][1]*m[2][0]-m[0][0]*m[2][1])/det;
-	m22 = (m[0][0]*m[1][1]-m[0][1]*m[1][0])/det;
+	m20 = (m[1][0]*m[2][1]-m[1][1]*m[2][0])/(*det);
+	m21 = (m[0][1]*m[2][0]-m[0][0]*m[2][1])/(*det);
+	m22 = (m[0][0]*m[1][1]-m[0][1]*m[1][0])/(*det);
   
   /* perform in-place substitution of the result */
 	m[0][0] = m00; 	m[0][1] = m01; 	m[0][2] = m02;
