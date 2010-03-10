@@ -820,6 +820,7 @@ void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads)
     free(grads->grad[i]);
   free(grads->grad);
   grads->grad = (real**)0;
+  free(grads);
 }
 
 #ifndef _NDEBUG
