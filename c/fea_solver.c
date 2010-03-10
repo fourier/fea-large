@@ -235,6 +235,22 @@ typedef struct shape_gradients_tag {
 } shape_gradients;
 
 
+/*
+ * Sparse matrix storage
+ * Internal format based on CRS
+ */
+typedef struct matrix_crs_tag {
+  int rows_count;
+  int cols_count;
+  struct matrix_rows* rows;
+} matrix_crs;
+
+typedef struct matrix_rows_tag {
+  int size;
+  int current_index;
+  int *columns;
+  real *values;
+} matrix_rows;
 
 /*
  * A main application structure which shall contain all
@@ -254,6 +270,7 @@ typedef struct fea_solver_tag {
                                    * shape function */
   isoform_t shape;                /* a function pointer to the shape
                                    * function */
+  matrix_crs global_mtx;
 } fea_solver;
 
 
@@ -316,6 +333,21 @@ static void free_prescribed_boundary_array(prescribed_boundary_array* presc);
  * Will also clear all aggregated structures
  */
 static void free_fea_solver(fea_solver* solver);
+
+
+/*************************************************************/
+/* Sparse matrix operations                                  */
+
+/*
+ * Constructor for a sparse matrix
+ *
+ */
+static void new_matrix_crs(matrix_crs* mtx,
+                           int rows,
+                           int cols,
+                           int nonzero_count);
+/* Destructor for a sparse matrix */
+static void free_matrix_crs(matrix_crs* mtx);
 
 /*
  * A function which will be called in case of error to
@@ -561,6 +593,18 @@ void application_done(void)
   dmalloc_shutdown();
 #endif
   
+}
+
+void new_matrix_crs(matrix_crs* mtx,
+                    int rows,
+                    int cols,
+                    int nonzero_count)
+{
+}
+
+
+void free_matrix_crs(matrix_crs* mtx)
+{
 }
 
 
@@ -961,9 +1005,13 @@ void solver_local_stiffness(fea_solver* self,int element)
               /* append to the local stiffness */
               stiff[I][J] += sum;
               /* finally distribute to the global matrix */
-              globalI = self->elements->elements[element][a]*dof + i;
-              globalJ = self->elements->elements[element][b]*dof + j;
+              /* test if current element is nonzero */
+              if (!EQL(stiff[I][J],0))
+              {
+                globalI = self->elements->elements[element][a]*dof + i;
+                globalJ = self->elements->elements[element][b]*dof + j;
               /* M(globalI,globalJ) = M(globalI,globalJ) + stiff[I][J] */
+              }
             }
         }
     }
