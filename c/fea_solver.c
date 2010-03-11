@@ -369,6 +369,11 @@ static void matrix_crs_element_add(matrix_crs* self,int i, int j, real value);
 /* reorder rows and columns of a matrix to prepare for solving SLAE */
 static void matrix_crs_reorder(matrix_crs* self);
 
+#ifdef DUMP_DATA
+static void matrix_crs_dump(matrix_crs* self);
+#endif
+
+
 /*************************************************************/
 /* General functions                                         */
 
@@ -403,7 +408,7 @@ void solve( fea_task *task,
             elements_array *elements,
             prescribed_boundary_array *presc_boundary);
 
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
 /* Dump input data to check if parser works correctly */
 void dump_input_data( fea_task *task,
                       fea_solution_params *fea_params,
@@ -537,9 +542,8 @@ void solve( fea_task *task,
 {
   /* initialize variables */
   int i;
-  FILE *f;
   fea_solver *solver = (fea_solver*)0;
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
   /* Dump all data in debug version */
   dump_input_data(task,fea_params,nodes,elements,presc_boundary);
 #endif
@@ -567,13 +571,10 @@ void solve( fea_task *task,
   solver_create_forces_bc(solver);
   /* apply prescribed boundary conditions */
   solver_apply_prescribed_bc(solver);
-  
-#ifndef _NDEBUG
-  f = fopen("mywidths.txt","w+");
-  for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
-    fprintf(f,"%d: %d\n",i+1,solver->global_mtx.rows[i].current_index + 1);
-  fclose(f);
-#endif         
+
+#ifdef DUMP_DATA
+  matrix_crs_dump(&solver->global_mtx);
+#endif
   
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -591,7 +592,7 @@ int parse_cmdargs(int argc, char **argv,char **filename)
   return 0;
 }
 
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
 void dump_input_data( fea_task *task,
                       fea_solution_params *fea_params,
                       nodes_array *nodes,
@@ -599,29 +600,32 @@ void dump_input_data( fea_task *task,
                       prescribed_boundary_array *presc_boundary)
 {
   int i,j;
-  printf("nodes\n");
+  FILE *f;
+  f = fopen("input_data.txt","w+");
+  fprintf(f,"nodes\n");
   for ( i = 0; i < nodes->nodes_count; ++ i)
   {
     for ( j = 0; j < MAX_DOF; ++ j)
-      printf("%f ", nodes->nodes[i][j]);
-    printf("\n");
+      fprintf(f,"%f ", nodes->nodes[i][j]);
+    fprintf(f,"\n");
   }
-  printf("elements\n");
+  fprintf(f,"elements\n");
   for ( i = 0; i < elements->elements_count; ++ i)
   {
     for ( j = 0; j < fea_params->nodes_per_element; ++ j)
-      printf("%d ", elements->elements[i][j]);
-    printf("\n");
+      fprintf(f,"%d ", elements->elements[i][j]);
+    fprintf(f,"\n");
   }
-  printf("boundary\n");
+  fprintf(f,"boundary\n");
   for ( i = 0; i < presc_boundary->prescribed_nodes_count; ++ i)
   {
-    printf("%d %f %f %f %d\n",presc_boundary->prescribed_nodes[i].node_number,
-           presc_boundary->prescribed_nodes[i].values[0],
-           presc_boundary->prescribed_nodes[i].values[1],
-           presc_boundary->prescribed_nodes[i].values[2],
-           presc_boundary->prescribed_nodes[i].type);
+    fprintf(f,"%d %f %f %f %d\n",presc_boundary->prescribed_nodes[i].node_number,
+            presc_boundary->prescribed_nodes[i].values[0],
+            presc_boundary->prescribed_nodes[i].values[1],
+            presc_boundary->prescribed_nodes[i].values[2],
+            presc_boundary->prescribed_nodes[i].type);
   }
+  fclose(f);
 }
 #endif
 
@@ -733,7 +737,7 @@ void matrix_crs_element_add(matrix_crs* self,int i, int j, real value)
     }
     /* add an element to the row */
     self->rows[i].current_index++;
-    self->rows[i].values[self->rows[i].current_index] += value;
+    self->rows[i].values[self->rows[i].current_index] = value;
     self->rows[i].columns[self->rows[i].current_index] = j;
   }
 }
@@ -742,6 +746,42 @@ void matrix_crs_reorder(matrix_crs* self)
 {
   /* TODO: implement sorting of rows */
 }
+
+#ifdef DUMP_DATA
+void matrix_crs_dump(matrix_crs* self)
+{
+  FILE* f;
+  int i,j;
+  
+  f = fopen("mywidths.txt","w+");
+  for ( i = 0; i < self->rows_count; ++ i)
+    fprintf(f,"%d: %d\n",i+1,self->rows[i].current_index + 1);
+  fclose(f);
+  
+  f = fopen("rows.txt","w+");
+  for ( i = 0; i < self->rows_count; ++ i)
+  {
+    for ( j = 0; j <= self->rows[i].current_index; ++ j)
+      fprintf(f,"%d ",self->rows[i].columns[j] + 1);
+    fprintf(f,"\n");
+    for ( j = 0; j <= self->rows[i].current_index; ++ j)
+      fprintf(f,"%f ",self->rows[i].values[j]);
+    fprintf(f,"\n\n");
+  }
+  fclose(f);
+
+
+  f = fopen("global_matrix_c.txt","w+");
+  for (i = 0; i < self->rows_count; ++ i)
+  {
+    for (j = 0; j < self->rows_count; ++ j)
+      fprintf(f,"%.5f ",matrix_crs_element(self,i,j));
+    fprintf(f,"\n");
+  }
+  fclose(f);
+}
+#endif
+
 
 
 fea_solver* new_fea_solver(fea_task *task,
@@ -788,6 +828,7 @@ void free_fea_solver(fea_solver* solver)
   free_elements_array(solver->elements);
   free_prescribed_boundary_array(solver->presc_boundary);
   free_matrix_crs(&solver->global_mtx);
+  free(solver->global_forces_vct);
   free(solver);
 }
 
@@ -893,7 +934,7 @@ void solver_create_element_params(fea_solver* solver)
   };
   
 }
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
 static void solver_dump_shape_gradients(fea_solver* self,
                                         shape_gradients* grads,
                                         int element,
@@ -901,35 +942,38 @@ static void solver_dump_shape_gradients(fea_solver* self,
                                         real (*J)[MAX_DOF])
 {
   int i,j;
-  printf("\nElement %d:\n",element);
+  FILE* f;
+  f = fopen("gradients.txt","w+");
+  fprintf(f,"\nElement %d:\n",element);
   for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
-    printf("%d ",self->elements->elements[element][j]);
-  printf("\nNodes:\n");
+    fprintf(f,"%d ",self->elements->elements[element][j]);
+  fprintf(f,"\nNodes:\n");
   for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
   {
     for ( i = 0; i < MAX_DOF; ++ i)
-      printf("%f ",self->nodes->nodes[self->elements->elements[element][j]][i]);
-    printf("\n");
+      fprintf(f,"%f ",self->nodes->nodes[self->elements->elements[element][j]][i]);
+    fprintf(f,"\n");
   }
-  printf("\nGauss node %d:\n",gauss);
+  fprintf(f,"\nGauss node %d:\n",gauss);
   for ( i = 0; i < MAX_DOF; ++ i)
-    printf("%f ",self->elements_db.gauss_nodes_data[gauss][i+1]);
-  printf("\n\nDeterminant of Jacobi matrix(det(J): %f\n",grads->detJ);
+    fprintf(f,"%f ",self->elements_db.gauss_nodes_data[gauss][i+1]);
+  fprintf(f,"\n\nDeterminant of Jacobi matrix(det(J): %f\n",grads->detJ);
     
-  printf("\nInverse Jacobi matrix(J^-1):\n");
+  fprintf(f,"\nInverse Jacobi matrix(J^-1):\n");
   for ( i = 0; i < MAX_DOF; ++ i)
   {
     for ( j = 0; j < MAX_DOF; ++ j)
-      printf("%f ",J[i][j]);
-    printf("\n");
+      fprintf(f,"%f ",J[i][j]);
+    fprintf(f,"\n");
   }
-  printf("\nMatrix of gradients:\n");
+  fprintf(f,"\nMatrix of gradients:\n");
   for ( i = 0; i < MAX_DOF; ++ i)
   {
     for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
-      printf("%.5f ",grads->grad[i][j]);
-    printf("\n");
-  }  
+      fprintf(f,"%.5f ",grads->grad[i][j]);
+    fprintf(f,"\n");
+  }
+  fclose(f);
 }
 #endif
 
@@ -995,7 +1039,7 @@ shape_gradients* solver_new_shape_gradients(fea_solver* self,
         for ( k = 0; k < MAX_DOF; ++ k)
           grads->grad[i][j] += J[i][k]* \
             self->elements_db.gauss_nodes[gauss]->dforms[k][j];
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
     /* Dump results */
     solver_dump_shape_gradients(self,grads,element,gauss,J);
 #endif
@@ -1016,22 +1060,26 @@ void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads)
   free(grads);
 }
 
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
 void solver_dump_local_stiffness(fea_solver* self,real **stiff,int el)
 {
   int i,j;
+  FILE* f;
+  char fname[50];
   int size = self->fea_params->nodes_per_element*self->task->dof;
-  printf("\nLocal stiffness matrix for element %d:\n",el); 
+  sprintf(fname,"elements/K%d.txt",el);
+  f = fopen(fname,"w+");
   for ( i = 0; i < size; ++ i)
   {
     for ( j = 0; j < size; ++ j)
-      printf("%.5f ",stiff[i][j]);
-    printf("\n");
+      fprintf(f,"%.5f ",stiff[i][j]);
+    fprintf(f,"\n");
   }
+  fclose(f);
 }
 #endif
 
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
 void matrix_tensor_mapping(int I, int* i, int* j)
 {
   switch (I)
@@ -1066,17 +1114,20 @@ void dump_ctensor_as_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
   int I,J;
   int i = 0, j = 0, k = 0, l = 0;
-  printf("\nConstitutive matrix:\n"); 
+  FILE* f;
+  f = fopen("ctensor.txt","w+");
+  fprintf(f,"\nConstitutive matrix:\n"); 
   for (I = 0; I < 6; ++ I)
   {
     matrix_tensor_mapping(I,&i,&j);
     for (J = 0; J < 6;++ J)
     {
       matrix_tensor_mapping(J,&k,&l);
-      printf("%f ",ctensor[i][j][k][l]);
+      fprintf(f,"%f ",ctensor[i][j][k][l]);
     }
-    printf("\n");
+    fprintf(f,"\n");
   }
+  fclose(f);
 }
 #endif
 
@@ -1112,7 +1163,7 @@ void solver_local_stiffness(fea_solver* self,int element)
   /* obtain a C tensor */
   solver_ctensor(self,graddef,ctens);
   
-#ifndef _NDEBUG  
+#ifdef DUMP_DATA  
   dump_ctensor_as_matrix(ctens);
 #endif
   
@@ -1155,24 +1206,19 @@ void solver_local_stiffness(fea_solver* self,int element)
               /* append to the local stiffness */
               stiff[I][J] += sum;
               /* finally distribute to the global matrix */
-              /* test if current element is nonzero */
-              /* if (!EQL(stiff[I][J],0)) */
-              {
-                globalI = self->elements->elements[element][a]*dof + i;
-                globalJ = self->elements->elements[element][b]*dof + j;
-                matrix_crs_element_add(&self->global_mtx,
-                                       globalI,
-                                       globalJ,
-                                       stiff[I][J]);
-              /* M(globalI,globalJ) = M(globalI,globalJ) + stiff[I][J] */
-              }
+              globalI = self->elements->elements[element][a]*dof + i;
+              globalJ = self->elements->elements[element][b]*dof + j;
+              matrix_crs_element_add(&self->global_mtx,
+                                     globalI,
+                                     globalJ,
+                                     sum);
             }
         }
     }
     solver_free_shape_gradients(self,grads);
   }
   
-#ifndef _NDEBUG
+#ifdef DUMP_DATA
   solver_dump_local_stiffness(self,stiff,element);
 #endif
   
