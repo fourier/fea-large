@@ -149,7 +149,6 @@ typedef struct fea_task_tag {
 
 /* Calculated solution parameters */
 typedef struct fea_solution_params_tag {
-  int msize;                    /* size of the global stiffness matrix */
   int nodes_per_element;        /* number of nodes defined in element 
                                    based on fea_task::ele_type */
   int gauss_nodes_count;        /* number of gauss nodes per element */
@@ -276,7 +275,8 @@ typedef struct fea_solver_tag {
                                    * shape function */
   isoform_t shape;                /* a function pointer to the shape
                                    * function */
-  matrix_crs global_mtx;
+  matrix_crs global_mtx;        /* global stiffness matrix */
+  real* global_forces_vct;      /* external forces vector */
 } fea_solver;
 
 
@@ -366,7 +366,8 @@ static void free_matrix_crs(matrix_crs* mtx);
 static real matrix_crs_element(matrix_crs* self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
 static void matrix_crs_element_add(matrix_crs* self,int i, int j, real value);
-
+/* reorder rows and columns of a matrix to prepare for solving SLAE */
+static void matrix_crs_reorder(matrix_crs* self);
 
 /*************************************************************/
 /* General functions                                         */
@@ -462,6 +463,12 @@ static void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads)
 /* Create and distribute local stiffness matrix for the element */
 static void solver_local_stiffness(fea_solver* self,int element);
 
+/* Fill greate global forces vector */
+static void solver_create_forces_bc(fea_solver* self);
+
+/* Apply BC in form of prescribed displacements */
+static void solver_apply_prescribed_bc(fea_solver* self);
+
 /*************************************************************/
 /* Auxulary functions                                        */
 
@@ -530,6 +537,7 @@ void solve( fea_task *task,
 {
   /* initialize variables */
   int i;
+  FILE *f;
   fea_solver *solver = (fea_solver*)0;
 #ifndef _NDEBUG
   /* Dump all data in debug version */
@@ -553,6 +561,19 @@ void solve( fea_task *task,
    * in the global stiffness matrix */
   for ( i = 0; i < solver->elements->elements_count; ++ i)
     solver_local_stiffness(solver,i);
+  /* sort column indicies in global matrix */
+  matrix_crs_reorder(&solver->global_mtx);
+  /* fill the external forces vector */
+  solver_create_forces_bc(solver);
+  /* apply prescribed boundary conditions */
+  solver_apply_prescribed_bc(solver);
+  
+#ifndef _NDEBUG
+  f = fopen("mywidths.txt","w+");
+  for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
+    fprintf(f,"%d: %d\n",i+1,solver->global_mtx.rows[i].current_index + 1);
+  fclose(f);
+#endif         
   
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -717,7 +738,10 @@ void matrix_crs_element_add(matrix_crs* self,int i, int j, real value)
   }
 }
 
-
+void matrix_crs_reorder(matrix_crs* self)
+{
+  /* TODO: implement sorting of rows */
+}
 
 
 fea_solver* new_fea_solver(fea_task *task,
@@ -744,9 +768,12 @@ fea_solver* new_fea_solver(fea_task *task,
   msize = nodes->nodes_count*solver->task->dof;
   /* approximate bandwidth of a global matrix
    * usually sqrt(msize)*2*/
-  bandwidth = sqrt(msize)*2;
+  bandwidth = (int)sqrt(msize)*2;
   init_matrix_crs(&solver->global_mtx,msize,msize,bandwidth);
-  
+  /* allocate memory for global forces vector */
+  solver->global_forces_vct = (real*)malloc(sizeof(real)*msize);
+  memset(solver->global_forces_vct,0,sizeof(real)*msize);
+    
   return solver;
 }
 
@@ -1037,7 +1064,8 @@ void matrix_tensor_mapping(int I, int* i, int* j)
 
 void dump_ctensor_as_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
-  int I,J,i,j,k,l;
+  int I,J;
+  int i = 0, j = 0, k = 0, l = 0;
   printf("\nConstitutive matrix:\n"); 
   for (I = 0; I < 6; ++ I)
   {
@@ -1128,7 +1156,7 @@ void solver_local_stiffness(fea_solver* self,int element)
               stiff[I][J] += sum;
               /* finally distribute to the global matrix */
               /* test if current element is nonzero */
-              if (!EQL(stiff[I][J],0))
+              /* if (!EQL(stiff[I][J],0)) */
               {
                 globalI = self->elements->elements[element][a]*dof + i;
                 globalJ = self->elements->elements[element][b]*dof + j;
@@ -1154,6 +1182,8 @@ void solver_local_stiffness(fea_solver* self,int element)
   free(stiff);
 }
 
+
+
 void solver_ctensor(fea_solver* self,
                     real (*graddef)[MAX_DOF],
                     real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
@@ -1172,6 +1202,16 @@ void solver_ctensor(fea_solver* self,
             + mu * DELTA (i, l) * DELTA (j, k);
 }
 
+void solver_create_forces_bc(fea_solver* self)
+{
+  /* TODO: implement this */
+  /* solver->global_forces_vct */
+}
+
+void solver_apply_prescribed_bc(fea_solver* self)
+{
+  /* solver->global_forces_vct */
+}
 
 
 
@@ -1341,7 +1381,6 @@ static fea_solution_params* new_fea_solution_params()
   /* set default values */
   fea_params->gauss_nodes_count = 5;
   fea_params->nodes_per_element = 10;
-  fea_params->msize = 0;
   return fea_params;
 }
 
