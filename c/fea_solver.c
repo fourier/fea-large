@@ -930,6 +930,7 @@ void solver_create_element_params(fea_solver* solver)
     break;
   default:
     /* TODO: add error handling here */
+    printf("Error: unknown element type");
     exit(1);
   };
   
@@ -1085,28 +1086,22 @@ void matrix_tensor_mapping(int I, int* i, int* j)
   switch (I)
   {
   case 0:
-    *i = 0;
-    *j = 0;
+    *i = 0; *j = 0;
     break;
   case 1:
-    *i = 1;
-    *j = 1;
+    *i = 1; *j = 1;
     break;
   case 2:
-    *i = 2;
-    *j = 2;
+    *i = 2; *j = 2;
     break;
   case 3:
-    *i = 0;
-    *j = 1;
+    *i = 0; *j = 1;
     break;
   case 4:
-    *i = 1;
-    *j = 2;
+    *i = 1; *j = 2;
     break;
   case 5:
-    *i = 0;
-    *j = 2;
+    *i = 0; *j = 2;
   }
 }
 
