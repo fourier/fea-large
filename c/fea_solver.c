@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <float.h>
+#include <assert.h>
 #ifdef USE_EXPAT
 #include <expat.h>
 #endif
@@ -231,26 +232,31 @@ typedef struct elements_database_tag {
 typedef struct shape_gradients_tag {
   real **grad;                  /* array of derivatives of shape functions
                                  * [dof x nodes_per_element] */
-  real detJ;                    /* determinant of the Jacobi matrix */
+  real detJ;                    /* determinant of Jacobi matrix */
 } shape_gradients;
 
 
 /*
- * Sparse matrix storage
+ * Sparse matrix row storage 
+ * Internal format based on CRS
+ */
+typedef struct matrix_crs_row_tag {
+  int width;
+  int current_index;
+  int *columns;
+  real *values;
+} matrix_crs_row;
+
+/*
+ * Sparse matrix row storage 
  * Internal format based on CRS
  */
 typedef struct matrix_crs_tag {
   int rows_count;
   int cols_count;
-  struct matrix_rows* rows;
+  matrix_crs_row* rows;
 } matrix_crs;
 
-typedef struct matrix_rows_tag {
-  int size;
-  int current_index;
-  int *columns;
-  real *values;
-} matrix_rows;
 
 /*
  * A main application structure which shall contain all
@@ -339,15 +345,31 @@ static void free_fea_solver(fea_solver* solver);
 /* Sparse matrix operations                                  */
 
 /*
- * Constructor for a sparse matrix
- *
+ * Initializer for a sparse matrix with specified rows and columns
+ * number.
+ * This function doesn't allocate the memory for the matrix itself;
+ * only for its structures. Matrix mtx shall be already allocated
+ * bandwdith - is a start bandwidth of a matrix row
  */
-static void new_matrix_crs(matrix_crs* mtx,
+static void init_matrix_crs(matrix_crs* mtx,
                            int rows,
                            int cols,
-                           int nonzero_count);
-/* Destructor for a sparse matrix */
+                           int bandwidth);
+/*
+ * Destructor for a sparse matrix
+ * This function doesn't deallocate memory for the matrix itself,
+ * only for its structures.
+ */
 static void free_matrix_crs(matrix_crs* mtx);
+
+/* getters/setters for a sparse matrix */
+static real matrix_crs_element(matrix_crs* self,int i, int j);
+/* adds an element value to the matrix node (i,j) */
+static void matrix_crs_element_add(matrix_crs* self,int i, int j, real value);
+
+
+/*************************************************************/
+/* General functions                                         */
 
 /*
  * A function which will be called in case of error to
@@ -531,7 +553,7 @@ void solve( fea_task *task,
    * in the global stiffness matrix */
   for ( i = 0; i < solver->elements->elements_count; ++ i)
     solver_local_stiffness(solver,i);
-
+  
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
 }
@@ -595,17 +617,107 @@ void application_done(void)
   
 }
 
-void new_matrix_crs(matrix_crs* mtx,
+void init_matrix_crs(matrix_crs* mtx,
                     int rows,
                     int cols,
-                    int nonzero_count)
+                    int bandwidth)
 {
+  int i;
+  if (mtx)
+  {
+    mtx->rows_count = rows;
+    mtx->cols_count = cols;
+    mtx->rows = (matrix_crs_row*)malloc(sizeof(matrix_crs_row)*rows);
+    /* create rows with fixed bandwidth */
+    for (i = 0; i < rows; ++ i)
+    {
+      mtx->rows[i].width = bandwidth;
+      mtx->rows[i].current_index = -1;
+      mtx->rows[i].columns = (int*)malloc(sizeof(int)*bandwidth);
+      mtx->rows[i].values = (real*)malloc(sizeof(real)*bandwidth);
+      memset(mtx->rows[i].columns,0,sizeof(int)*bandwidth);
+      memset(mtx->rows[i].values,0,sizeof(real)*bandwidth);
+    }
+  }
 }
 
 
 void free_matrix_crs(matrix_crs* mtx)
 {
+  int i;
+  if (mtx)
+  {
+    for (i = 0; i < mtx->rows_count; ++ i)
+    {
+      free(mtx->rows[i].columns);
+      free(mtx->rows[i].values);
+    }
+    free(mtx->rows);
+    mtx->rows = (matrix_crs_row*)0;
+    mtx->cols_count = 0;
+    mtx->rows_count = 0;
+  }
 }
+
+real matrix_crs_element(matrix_crs* self,int i, int j)
+{
+  int index;
+  /* check for matrix and if i,j are proper indicies */
+  if (self && 
+      (i >= 0 && i < self->rows_count ) &&
+      (j >= 0 && j < self->cols_count ))
+  {
+    /* loop by nonzero columns in row i */
+    for (index = 0; index <= self->rows[i].current_index; ++ index)
+      if (self->rows[i].columns[index] == j)
+        return self->rows[i].values[index];
+  }
+  return 0;
+}
+
+void matrix_crs_element_add(matrix_crs* self,int i, int j, real value)
+{
+  int index,new_width;
+  int* columns = (int*)0;
+  real* values = (real*)0;
+  /* check for matrix and if i,j are proper indicies */
+  if (self && 
+      (i >= 0 && i < self->rows_count ) &&
+      (j >= 0 && j < self->cols_count ))
+  {
+    /* loop by nonzero columns in row i */
+    for (index = 0; index <= self->rows[i].current_index; ++ index)
+      if (self->rows[i].columns[index] == j)
+      {
+        /* nonzerod element found, add to it */
+        self->rows[i].values[index] += value;
+        return;
+      }
+    /* needed to add a new element to the row */
+    
+    /*
+     * check if bandwidth is not exceed and reallocate memory
+     * if necessary
+     */
+    if (self->rows[i].current_index == self->rows[i].width - 1)
+    {
+      new_width = self->rows[i].width*2;
+      columns = (int*)realloc(self->rows[i].columns,new_width*sizeof(int));
+      assert(columns);
+      self->rows[i].columns = columns;
+      values = (real*)realloc(self->rows[i].values,new_width*sizeof(real));
+      assert(values);
+      self->rows[i].values = values;
+      self->rows[i].width = new_width;
+    }
+    /* add an element to the row */
+    self->rows[i].current_index++;
+    self->rows[i].values[self->rows[i].current_index] += value;
+    self->rows[i].columns[self->rows[i].current_index] = j;
+  }
+}
+
+
 
 
 fea_solver* new_fea_solver(fea_task *task,
@@ -614,6 +726,7 @@ fea_solver* new_fea_solver(fea_task *task,
                            elements_array *elements,
                            prescribed_boundary_array *prs_boundary)
 {
+  int msize,bandwidth;
   /* Allocate structure */
   fea_solver* solver = malloc(sizeof(fea_solver));
   /* Copy pointers to the solver structure */
@@ -625,6 +738,14 @@ fea_solver* new_fea_solver(fea_task *task,
 
   solver->elements_db.gauss_nodes = (gauss_node**)0;
   solver_create_element_params(solver);
+
+  /* allocate resources initialize global stiffness matrix */
+  /* global matrix size */
+  msize = nodes->nodes_count*solver->task->dof;
+  /* approximate bandwidth of a global matrix
+   * usually sqrt(msize)*2*/
+  bandwidth = sqrt(msize)*2;
+  init_matrix_crs(&solver->global_mtx,msize,msize,bandwidth);
   
   return solver;
 }
@@ -639,6 +760,7 @@ void free_fea_solver(fea_solver* solver)
   free_nodes_array(solver->nodes);
   free_elements_array(solver->elements);
   free_prescribed_boundary_array(solver->presc_boundary);
+  free_matrix_crs(&solver->global_mtx);
   free(solver);
 }
 
@@ -1010,6 +1132,10 @@ void solver_local_stiffness(fea_solver* self,int element)
               {
                 globalI = self->elements->elements[element][a]*dof + i;
                 globalJ = self->elements->elements[element][b]*dof + j;
+                matrix_crs_element_add(&self->global_mtx,
+                                       globalI,
+                                       globalJ,
+                                       stiff[I][J]);
               /* M(globalI,globalJ) = M(globalI,globalJ) + stiff[I][J] */
               }
             }
