@@ -23,6 +23,14 @@ typedef int BOOL;
 #define MAX_DOF 3
 #define MAX_MATERIAL_PARAMETERS 10
 
+/*
+ * SLAE solver constants
+ * possibly shall go to the initial data in future
+ */
+#define MAX_ITER 10000
+#define TOLERANCE 1e-10
+
+
 /* Redefine type of the floating point values */
 #ifdef SINGLE
 typedef float real;
@@ -277,6 +285,7 @@ typedef struct fea_solver_tag {
                                    * function */
   matrix_crs global_mtx;        /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
+  real* global_solution_vct;    /* vector of global solution */
 } fea_solver;
 
 
@@ -363,11 +372,48 @@ static void init_matrix_crs(matrix_crs* mtx,
 static void free_matrix_crs(matrix_crs* mtx);
 
 /* getters/setters for a sparse matrix */
-static real matrix_crs_element(matrix_crs* self,int i, int j);
+
+/* returns a pointer to the specific element
+ * zero pointer if not found */
+static real* matrix_crs_element(matrix_crs* self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
 static void matrix_crs_element_add(matrix_crs* self,int i, int j, real value);
+
 /* reorder rows and columns of a matrix to prepare for solving SLAE */
 static void matrix_crs_reorder(matrix_crs* self);
+
+/*
+ * Implements BLAS level 2 function SAXPY: y = A*x+b
+ * All vectors shall be already allocated
+static void matrix_crs_saxpy((matrix_crs* self,real* b,real* x, real* y);
+ */
+
+/* Matrix-vector multiplication
+ * y = A*x*/
+static void matrix_crs_mv(matrix_crs* self,real* x, real* y);
+
+/*
+ * Solve SLAE for a matrix self with right-part b
+ * Store results to the vector x. It shall be already allocated
+ */
+static void matrix_crs_solve(matrix_crs* self,real* b,real* x);
+/*
+ * Conjugate Grade solver
+ * self - matrix
+ * b - right-part vector
+ * x0 - first approximation of the solution
+ * max_iter - pointer to maximum number of iterations, MAX_ITER if zero;
+ * will contain a number of iterations passed
+ * tolerance - pointer to desired tolerance value, TOLERANCE if zero;
+ * will contain norm of the residual at the end of iteration
+ * x - output vector
+ */
+static void matrix_crs_solve_cg(matrix_crs* self,
+                                real* b,
+                                real* x0,
+                                int* max_iter,
+                                real* tolerance,
+                                real* x);
 
 #ifdef DUMP_DATA
 static void matrix_crs_dump(matrix_crs* self);
@@ -397,6 +443,12 @@ int parse_cmdargs(int argc, char **argv,char **filename);
  * Real main function with input filename as a parameter
  */
 int do_main(char* filename);
+
+/*
+ * Test function to prove what all matrix manipulations are correct
+ * returns FALSE if fail
+ */
+BOOL do_tests();
 
 /*
  * Solver function which shall be called
@@ -474,6 +526,12 @@ static void solver_create_forces_bc(fea_solver* self);
 /* Apply BC in form of prescribed displacements */
 static void solver_apply_prescribed_bc(fea_solver* self);
 
+/* Apply BC in form of prescribed displacements to a single specified
+ * global d.o.f.
+ * This function is called from solver_apply_prescribed_bc
+ */
+static void solver_apply_single_bc(fea_solver* self, int index, real value);
+
 /*************************************************************/
 /* Auxulary functions                                        */
 
@@ -491,6 +549,13 @@ int main(int argc, char **argv)
 {
   char* filename = 0;
   int result = 0;
+
+  /* Perform tests before start */
+  if (!do_tests())
+  {
+    printf("Error! Tests failed!\n");
+    return 1;
+  }
   
   do
   {
@@ -575,6 +640,12 @@ void solve( fea_task *task,
 #ifdef DUMP_DATA
   matrix_crs_dump(&solver->global_mtx);
 #endif
+  /* solve global equation system */
+  matrix_crs_solve(&solver->global_mtx,
+                   solver->global_forces_vct,
+                   solver->global_solution_vct);
+  for (i = 0; i < solver->global_mtx.rows_count; ++ i)
+    printf("%f\n",solver->global_solution_vct[i]);
   
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -684,7 +755,7 @@ void free_matrix_crs(matrix_crs* mtx)
   }
 }
 
-real matrix_crs_element(matrix_crs* self,int i, int j)
+real* matrix_crs_element(matrix_crs* self,int i, int j)
 {
   int index;
   /* check for matrix and if i,j are proper indicies */
@@ -695,9 +766,9 @@ real matrix_crs_element(matrix_crs* self,int i, int j)
     /* loop by nonzero columns in row i */
     for (index = 0; index <= self->rows[i].current_index; ++ index)
       if (self->rows[i].columns[index] == j)
-        return self->rows[i].values[index];
+        return &self->rows[i].values[index];
   }
-  return 0;
+  return (real*)0;
 }
 
 void matrix_crs_element_add(matrix_crs* self,int i, int j, real value)
@@ -746,6 +817,125 @@ void matrix_crs_reorder(matrix_crs* self)
 {
   /* TODO: implement sorting of rows */
 }
+
+void matrix_crs_mv(matrix_crs* self,real* x, real* y)
+{
+  int i,j;
+  for ( i = 0; i < self->rows_count; ++ i)
+  {
+    y[i] = 0;
+    for ( j = 0; j <= self->rows[i].current_index; ++ j)
+      y[i] += self->rows[i].values[j]*x[self->rows[i].columns[j]];
+  }
+}
+
+void matrix_crs_solve(matrix_crs* self,real* b,real* x)
+{
+  real tolerance = TOLERANCE;
+  int max_iter = MAX_ITER;
+  matrix_crs_solve_cg(self,b,b,&max_iter,&tolerance,x);
+}
+
+void matrix_crs_solve_cg(matrix_crs* self,
+                                real* b,
+                                real* x0,
+                                int* max_iter,
+                                real* tolerance,
+                                real* x)
+{
+  /* Conjugate Gradient Algorithm */
+  /*
+   * Taken from the book:
+   * Saad Y. Iterative methods for sparse linear systems (2ed., 2000)
+   * page 178
+   */
+   
+  /* variables */
+  int i,j;
+  real alpha, beta, residn,a1,a2;
+  int size = sizeof(real)*self->rows_count;
+  int msize = self->rows_count;
+  real max_iterations = max_iter ? *max_iter : MAX_ITER;
+  real tol = tolerance ? *tolerance : TOLERANCE;
+  real* r;              /* residual */
+  real* p;              /* search direction */
+  real* temp;
+  
+  /* allocate memory for vectors */
+  r = malloc(size);
+  p = malloc(size);
+  temp = malloc(size);
+  /* clear vectors */
+  memset(r,0,size);
+  memset(p,0,size);
+  memset(temp,0,size);
+
+  /* x = x_0 */
+  for ( i = 0; i < msize; ++ i)
+    x[i] = x0[i];
+
+  /* r_0 = b - A*x_0 */
+  matrix_crs_mv(self,b,r);
+  for ( i = 0; i < msize; ++ i)
+    r[i] = b[i] - r[i];
+
+  /* p_0 = r_0 */
+  memcpy(p,r,size);
+  
+  /* CG loop */
+  for ( j = 0; j < max_iterations; j ++ )
+  {
+    /* temp = A*p_j */
+    matrix_crs_mv(self,p,temp);
+    /* compute (r_j,r_j) and (A*p_j,p_j) */
+    a1 = 0; a2 = 0;
+    for (i = 0; i < msize; ++ i)
+    {
+      a1 += r[i]*r[i]; /* (r_j,r_j) */
+      a2 += p[i]*temp[i];      /* (A*p_j,p_j) */
+    }
+
+    /*            (r_j,r_j) 
+     * alpha_j = -----------
+     *           (A*p_j,p_j)
+     */                     
+    alpha = a1/a2;              
+                                
+    /* x_{j+1} = x_j+alpha_j*p_j */
+    for (i = 0; i < msize; ++ i)
+      x[i] += alpha*p[i];
+    
+    /* r_{j+1} = r_j-alpha_j*A*p_j */
+    for (i = 0; i < msize; ++ i)
+      r[i] -= alpha*temp[i]; 
+
+    /* check for convergence */
+    residn = fabs(r[0]);
+    for (i = 1; i < msize; ++ i )
+      if (fabs(r[i]) > residn) residn = fabs(r[i]);
+    if (residn < tol )
+      break;
+
+    /* compute (r_{j+1},r_{j+1}) */
+    a2 = 0;
+    for (i = 0; i < msize; ++ i)
+      a2 += r[i]*r[i];
+
+    /* b_j = (r_{j+1},r_{j+1})/(r_j,r_j) */
+    beta = a2/a1;
+    
+    /* d_{j+1} = r_{j+1} + beta_j*d_j */
+    for (i = 0; i < msize; ++ i)
+      p[i] = r[i] + beta*p[i];
+  }
+  *max_iter = j;
+  *tolerance = residn;
+  
+  free(r);
+  free(p);
+  free(temp);
+}
+
 
 #ifdef DUMP_DATA
 void matrix_crs_dump(matrix_crs* self)
@@ -810,10 +1000,11 @@ fea_solver* new_fea_solver(fea_task *task,
    * usually sqrt(msize)*2*/
   bandwidth = (int)sqrt(msize)*2;
   init_matrix_crs(&solver->global_mtx,msize,msize,bandwidth);
-  /* allocate memory for global forces vector */
+  /* allocate memory for global forces and solution vectors */
   solver->global_forces_vct = (real*)malloc(sizeof(real)*msize);
+  solver->global_solution_vct = (real*)malloc(sizeof(real)*msize);
   memset(solver->global_forces_vct,0,sizeof(real)*msize);
-    
+  memset(solver->global_solution_vct,0,sizeof(real)*msize);
   return solver;
 }
 
@@ -829,6 +1020,7 @@ void free_fea_solver(fea_solver* solver)
   free_prescribed_boundary_array(solver->presc_boundary);
   free_matrix_crs(&solver->global_mtx);
   free(solver->global_forces_vct);
+  free(solver->global_solution_vct);
   free(solver);
 }
 
@@ -1251,9 +1443,88 @@ void solver_create_forces_bc(fea_solver* self)
 
 void solver_apply_prescribed_bc(fea_solver* self)
 {
-  /* solver->global_forces_vct */
+  int i;
+  int type,index,offset,node_number;
+  real presc[3];
+  for ( i =0; i < self->presc_boundary->prescribed_nodes_count; ++ i)
+  {
+    node_number = self->presc_boundary->prescribed_nodes[i].node_number;
+    memcpy(presc,
+           self->presc_boundary->prescribed_nodes[i].values,
+           sizeof(real)*self->task->dof);
+    type = self->presc_boundary->prescribed_nodes[i].type;
+
+    /* set the index offset depending on condition type */
+    if ( type == PRESCRIBEDX || type == PRESCRIBEDXY || 
+         type == PRESCRIBEDXZ || type == PRESCRIBEDXYZ )
+    {
+      offset = 0;
+      index = node_number*self->task->dof+offset;
+      solver_apply_single_bc(self, index, presc[offset]);
+    }
+    if ( type == PRESCRIBEDY || type == PRESCRIBEDXY || 
+         type == PRESCRIBEDYZ || type == PRESCRIBEDXYZ )
+    {
+      offset = 1;
+      index = node_number*self->task->dof+offset;
+      solver_apply_single_bc(self, index, presc[offset]);
+    }
+    if ( type == PRESCRIBEDZ || type == PRESCRIBEDXZ || 
+         type == PRESCRIBEDYZ || type == PRESCRIBEDXYZ )
+    {
+      offset = 2;
+      index = node_number*self->task->dof+offset;
+      solver_apply_single_bc(self, index, presc[offset]);
+    }
+  }
+
+  /* for (i = 0; i < self->global_mtx.rows_count; ++ i) */
+  /*   printf("%f\n",self->global_forces_vct[i]); */
 }
 
+void solver_apply_single_bc(fea_solver* self, int index, real presc)
+{
+  real *pvalue,*pvalue1,value;
+  int size = self->global_mtx.rows_count;
+  int j;
+  pvalue = matrix_crs_element(&self->global_mtx,index,index);
+  /* global matrix always shall have
+   * nonzero diagonal elements */
+  assert(pvalue);
+  pvalue1 = pvalue;
+  value = *pvalue;
+  
+  for (j = 0; j < size; ++ j)
+  {
+    pvalue = matrix_crs_element(&self->global_mtx,j,index);
+    if (pvalue)
+    {
+      self->global_forces_vct[j] = self->global_forces_vct[j] -
+        *pvalue*presc;
+      *pvalue = 0;
+    }
+    pvalue = matrix_crs_element(&self->global_mtx,index,j);
+    if (pvalue)
+      *pvalue = 0;
+  }
+  
+  *pvalue1 = value;
+  self->global_forces_vct[index] = value*presc;
+}
+
+
+void solver_apply_single_bc2(fea_solver* self, int index, real presc)
+{
+  real *pvalue,new_value;
+  real Alpha = 1e8;
+
+  pvalue = matrix_crs_element(&self->global_mtx,index,index);
+  assert(pvalue);             /* global matrix always shall have
+                               * nonzero diagonal elements */
+  new_value = *pvalue*Alpha;
+  *pvalue = new_value;
+  self->global_forces_vct[index] = new_value*presc;
+}
 
 
 
@@ -2349,3 +2620,36 @@ BOOL initial_data_load(char *filename,
   return result;
 }
 
+
+BOOL do_tests()
+{
+  BOOL result = TRUE;
+  matrix_crs mtx;
+  real v[3],x[3];
+
+  /* 1st test, matrix solver  */
+  
+  /*
+   * | 1 0 -2 |   | 1 |   |-5 |
+   * | 0 1  0 | x | 2 | = | 2 | 
+   * |-2 0  5 |   | 3 |   |13 |
+   */
+   
+  memset(x,0,3);
+  v[0] = -5;
+  v[1] = 2;
+  v[2] = 13;
+  init_matrix_crs(&mtx,3,3,2);
+  matrix_crs_element_add(&mtx,0,0,1);
+  matrix_crs_element_add(&mtx,0,2,-2);
+  matrix_crs_element_add(&mtx,1,1,1);
+  matrix_crs_element_add(&mtx,2,0,-2);
+  matrix_crs_element_add(&mtx,2,2,5);
+
+  matrix_crs_solve(&mtx,v,x);
+  if ( fabs(x[0]-1) > TOLERANCE ||
+       fabs(x[1]-2) > TOLERANCE ||
+       fabs(x[2]-3) > TOLERANCE)
+    return FALSE;
+  return result;
+}
