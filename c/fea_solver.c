@@ -831,8 +831,8 @@ void matrix_crs_mv(matrix_crs* self,real* x, real* y)
 
 void matrix_crs_solve(matrix_crs* self,real* b,real* x)
 {
-  real tolerance = TOLERANCE;
-  int max_iter = MAX_ITER;
+  real tolerance = 1e-15;
+  int max_iter = 20000;
   matrix_crs_solve_cg(self,b,b,&max_iter,&tolerance,x);
 }
 
@@ -852,7 +852,8 @@ void matrix_crs_solve_cg(matrix_crs* self,
    
   /* variables */
   int i,j;
-  real alpha, beta, residn,a1,a2;
+  real alpha, beta,a1,a2;
+  real residn = 0;
   int size = sizeof(real)*self->rows_count;
   int msize = self->rows_count;
   real max_iterations = max_iter ? *max_iter : MAX_ITER;
@@ -942,7 +943,7 @@ void matrix_crs_dump(matrix_crs* self)
 {
   FILE* f;
   int i,j;
-  
+  real *pvalue,value;
   f = fopen("mywidths.txt","w+");
   for ( i = 0; i < self->rows_count; ++ i)
     fprintf(f,"%d: %d\n",i+1,self->rows[i].current_index + 1);
@@ -965,7 +966,11 @@ void matrix_crs_dump(matrix_crs* self)
   for (i = 0; i < self->rows_count; ++ i)
   {
     for (j = 0; j < self->rows_count; ++ j)
-      fprintf(f,"%.5f ",matrix_crs_element(self,i,j));
+    {
+      pvalue = matrix_crs_element(self,i,j);
+      value = pvalue ? *pvalue : 0;
+      fprintf(f,"%.5f ",value);
+    }
     fprintf(f,"\n");
   }
   fclose(f);
@@ -2647,9 +2652,10 @@ BOOL do_tests()
   matrix_crs_element_add(&mtx,2,2,5);
 
   matrix_crs_solve(&mtx,v,x);
-  if ( fabs(x[0]-1) > TOLERANCE ||
-       fabs(x[1]-2) > TOLERANCE ||
-       fabs(x[2]-3) > TOLERANCE)
-    return FALSE;
+  result = !( fabs(x[0]-1) > TOLERANCE ||
+              fabs(x[1]-2) > TOLERANCE ||
+              fabs(x[2]-3) > TOLERANCE);
+
+  free_matrix_crs(&mtx);
   return result;
 }
