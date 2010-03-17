@@ -244,15 +244,14 @@ typedef struct shape_gradients_tag {
 
 
 /*
- * Sparse matrix row storage 
- * Internal format based on CRS
+ * Sparse matrix row/column storage array
  */
-typedef struct sparse_matrix_row_tag {
+typedef struct indexed_array_tag {
   int width;
   int last_index;
-  int *columns;
+  int *indexes;
   real *values;
-} sparse_matrix_row;
+} indexed_array;
 
 /*
  * Sparse matrix row storage 
@@ -261,7 +260,7 @@ typedef struct sparse_matrix_row_tag {
 typedef struct sparse_matrix_tag {
   int rows_count;
   int cols_count;
-  sparse_matrix_row* rows;
+  indexed_array* rows;
 } sparse_matrix;
 
 
@@ -368,6 +367,14 @@ static void free_fea_solver(fea_solver* solver);
 /*************************************************************/
 /* Sparse matrix operations                                  */
 
+/* indexed_arrays operations */
+/* Swap i and j elements in the indexed array.
+ * Used in indexed_array_sort*/
+void indexed_array_swap(indexed_array* self,int i, int j);
+/* Performs in-place sort of the indexed array */
+void indexed_array_sort(indexed_array* self, int l, int r);
+
+
 /*
  * Initializer for a sparse matrix with specified rows and columns
  * number.
@@ -386,6 +393,9 @@ static void init_sparse_matrix(sparse_matrix* mtx,
  */
 static void free_sparse_matrix(sparse_matrix* mtx);
 
+/* Construct CSLR sparse matrix based on sparse_matrix format */
+void cslr_init(sparse_matrix* self, sparse_matrix_cslr* cslr);
+
 /* getters/setters for a sparse matrix */
 
 /* returns a pointer to the specific element
@@ -394,7 +404,7 @@ static real* sparse_matrix_element(sparse_matrix* self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
 static void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value);
 
-/* reorder rows and columns of a matrix to prepare for solving SLAE */
+/* rearrange columns of a matrix to prepare for solving SLAE */
 static void sparse_matrix_reorder(sparse_matrix* self);
 
 /*
@@ -738,15 +748,15 @@ void init_sparse_matrix(sparse_matrix* mtx,
   {
     mtx->rows_count = rows;
     mtx->cols_count = cols;
-    mtx->rows = (sparse_matrix_row*)malloc(sizeof(sparse_matrix_row)*rows);
+    mtx->rows = (indexed_array*)malloc(sizeof(indexed_array)*rows);
     /* create rows with fixed bandwidth */
     for (i = 0; i < rows; ++ i)
     {
       mtx->rows[i].width = bandwidth;
       mtx->rows[i].last_index = -1;
-      mtx->rows[i].columns = (int*)malloc(sizeof(int)*bandwidth);
+      mtx->rows[i].indexes = (int*)malloc(sizeof(int)*bandwidth);
       mtx->rows[i].values = (real*)malloc(sizeof(real)*bandwidth);
-      memset(mtx->rows[i].columns,0,sizeof(int)*bandwidth);
+      memset(mtx->rows[i].indexes,0,sizeof(int)*bandwidth);
       memset(mtx->rows[i].values,0,sizeof(real)*bandwidth);
     }
   }
@@ -760,14 +770,19 @@ void free_sparse_matrix(sparse_matrix* mtx)
   {
     for (i = 0; i < mtx->rows_count; ++ i)
     {
-      free(mtx->rows[i].columns);
+      free(mtx->rows[i].indexes);
       free(mtx->rows[i].values);
     }
     free(mtx->rows);
-    mtx->rows = (sparse_matrix_row*)0;
+    mtx->rows = (indexed_array*)0;
     mtx->cols_count = 0;
     mtx->rows_count = 0;
   }
+}
+
+void cslr_init(sparse_matrix* self, sparse_matrix_cslr* cslr)
+{
+  
 }
 
 real* sparse_matrix_element(sparse_matrix* self,int i, int j)
@@ -780,7 +795,7 @@ real* sparse_matrix_element(sparse_matrix* self,int i, int j)
   {
     /* loop by nonzero columns in row i */
     for (index = 0; index <= self->rows[i].last_index; ++ index)
-      if (self->rows[i].columns[index] == j)
+      if (self->rows[i].indexes[index] == j)
         return &self->rows[i].values[index];
   }
   return (real*)0;
@@ -789,7 +804,7 @@ real* sparse_matrix_element(sparse_matrix* self,int i, int j)
 void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value)
 {
   int index,new_width;
-  int* columns = (int*)0;
+  int* indexes = (int*)0;
   real* values = (real*)0;
   /* check for matrix and if i,j are proper indicies */
   if (self && 
@@ -798,7 +813,7 @@ void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value)
   {
     /* loop by nonzero columns in row i */
     for (index = 0; index <= self->rows[i].last_index; ++ index)
-      if (self->rows[i].columns[index] == j)
+      if (self->rows[i].indexes[index] == j)
       {
         /* nonzerod element found, add to it */
         self->rows[i].values[index] += value;
@@ -813,9 +828,9 @@ void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value)
     if (self->rows[i].last_index == self->rows[i].width - 1)
     {
       new_width = self->rows[i].width*2;
-      columns = (int*)realloc(self->rows[i].columns,new_width*sizeof(int));
-      assert(columns);
-      self->rows[i].columns = columns;
+      indexes = (int*)realloc(self->rows[i].indexes,new_width*sizeof(int));
+      assert(indexes);
+      self->rows[i].indexes = indexes;
       values = (real*)realloc(self->rows[i].values,new_width*sizeof(real));
       assert(values);
       self->rows[i].values = values;
@@ -824,13 +839,71 @@ void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value)
     /* add an element to the row */
     self->rows[i].last_index++;
     self->rows[i].values[self->rows[i].last_index] = value;
-    self->rows[i].columns[self->rows[i].last_index] = j;
+    self->rows[i].indexes[self->rows[i].last_index] = j;
   }
 }
 
+/* Swap 2 elements of the indexed array */
+void indexed_array_swap(indexed_array* self,int i, int j)
+{
+  int tmp_idx;
+  real tmp_val;
+  tmp_idx = self->indexes[i];
+  self->indexes[i] = self->indexes[j];
+  self->indexes[j] = tmp_idx;
+  tmp_val = self->values[i];
+  self->values[i] = self->values[j];
+  self->values[j] = tmp_val;
+}
+
+void indexed_array_sort(indexed_array* self, int l, int r)
+{
+  /*
+   * Quick sort procedure for indexed(compressed) arrays
+   * for example rows for CRS sparse matrix or columns for CSC
+   * sparse matrix
+   */
+  int pivot,i;
+  int tmp_idx;
+
+  /* boundary checks */
+  if (l < r)
+  {
+    if ( r - l == 1)
+    {
+      if (self->indexes[l] > self->indexes[r])
+        indexed_array_swap(self,r,l);
+      return;
+    }
+    /* choose the pivoting element */
+    pivot = (int)((r+l)/2.);
+    /* in-place partition procedure - move all elements
+     * lower than pivoting to the left, greater to the right */
+    tmp_idx  = self->indexes[pivot];
+    indexed_array_swap(self,pivot,r);
+    pivot = l;
+    for ( i = l; i < r; ++ i)
+    {
+      if (self->indexes[i] <= tmp_idx )
+      {
+        indexed_array_swap(self,i,pivot);
+        pivot++;
+      }
+    }
+    indexed_array_swap(self,r,pivot);
+    /* repeat procedure for the left and right parts of an array */
+    indexed_array_sort(self,l,pivot-1);
+    indexed_array_sort(self,pivot+1,r);
+  }
+}
+
+
 void sparse_matrix_reorder(sparse_matrix* self)
 {
-  /* TODO: implement sorting of rows */
+  int i;
+  
+  for (i = 0; i < self->rows_count; ++ i)
+    indexed_array_sort(&self->rows[i],0,self->rows[i].last_index);
 }
 
 void sparse_matrix_mv(sparse_matrix* self,real* x, real* y)
@@ -840,7 +913,7 @@ void sparse_matrix_mv(sparse_matrix* self,real* x, real* y)
   {
     y[i] = 0;
     for ( j = 0; j <= self->rows[i].last_index; ++ j)
-      y[i] += self->rows[i].values[j]*x[self->rows[i].columns[j]];
+      y[i] += self->rows[i].values[j]*x[self->rows[i].indexes[j]];
   }
 }
 
@@ -848,6 +921,7 @@ void sparse_matrix_solve(sparse_matrix* self,real* b,real* x)
 {
   real tolerance = 1e-15;
   int max_iter = 20000;
+
   sparse_matrix_solve_cg(self,b,b,&max_iter,&tolerance,x);
 }
 
@@ -968,7 +1042,7 @@ void sparse_matrix_dump(sparse_matrix* self)
   for ( i = 0; i < self->rows_count; ++ i)
   {
     for ( j = 0; j <= self->rows[i].last_index; ++ j)
-      fprintf(f,"%d ",self->rows[i].columns[j] + 1);
+      fprintf(f,"%d ",self->rows[i].indexes[j] + 1);
     fprintf(f,"\n");
     for ( j = 0; j <= self->rows[i].last_index; ++ j)
       fprintf(f,"%f ",self->rows[i].values[j]);
@@ -1401,7 +1475,7 @@ void solver_local_stiffness(fea_solver* self,int element)
               /* sum of particular derivatives and components of C tensor */
               for (k = 0; k < dof; ++ k)
                 for (l = 0; l < dof; ++ l)
-                  sum += grads->grad[k][a]*ctens[i][k][j][l]*grads->grad[l][b];
+                  sum+=grads->grad[k][a]*ctens[i][k][j][l]*grads->grad[l][b];
               /*
                * multiply by volume of an element = det(J)
                * where divider 6 or 2 or others already accounted in
@@ -2640,37 +2714,7 @@ BOOL initial_data_load(char *filename,
   return result;
 }
 
-void swap(int* arr,int i, int j)
-{
-  int tmp = arr[i];
-  arr[i] = arr[j];
-  arr[j] = tmp;
-}
 
-void qs_impl(int* arr, int size, int l, int r)
-{
-  int tmp;
-  int pivot;
-  if (r - l > 0 )
-  {
-    if (arr[r] < arr[l])
-      swap(arr,r,l);
-    if ( r-l == 2)
-      return;
-    r--;
-    l++;
-    pivot = (r+l)/2.;
-    qs_impl(arr,size,l,pivot);
-    qs_impl(arr,size,pivot,r);
-  }
-}
-
-void qs(int* arr, int size)
-{
-  int pivot = size/2.;
-  int l = 0, r = size-1;
-  qs_impl(arr, size,l,r);
-}
 
 
 BOOL do_tests()
@@ -2679,8 +2723,6 @@ BOOL do_tests()
   sparse_matrix mtx;
   real v[3],x[3];
 
-  int arr[] = {3,7,8,5,2,1,9,5,4};
-  
   int i,j,l_count,u_count,k,l,nonzeros = 0;
   sparse_matrix_cslr m;
 
@@ -2697,11 +2739,16 @@ BOOL do_tests()
   v[1] = 2;
   v[2] = 13;
   init_sparse_matrix(&mtx,3,3,2);
-  sparse_matrix_element_add(&mtx,0,0,1);
   sparse_matrix_element_add(&mtx,0,2,-2);
+  sparse_matrix_element_add(&mtx,0,0,1);
+
   sparse_matrix_element_add(&mtx,1,1,1);
-  sparse_matrix_element_add(&mtx,2,0,-2);
+  
   sparse_matrix_element_add(&mtx,2,2,5);
+  sparse_matrix_element_add(&mtx,2,0,-2);
+
+
+  sparse_matrix_reorder(&mtx);
 
   sparse_matrix_solve(&mtx,v,x);
   result = !( fabs(x[0]-1) > TOLERANCE ||
@@ -2722,7 +2769,7 @@ BOOL do_tests()
   for (i = 0; i < mtx.rows_count; ++ i)
     for (j = 0; j <= mtx.rows[i].last_index; ++ j)
       if ( i != j )
-        if ( mtx.rows[i].columns[j] > i)
+        if ( mtx.rows[i].indexes[j] > i)
           u_count ++;
         else l_count ++;
   /* allocate memory for arrays */
@@ -2731,11 +2778,6 @@ BOOL do_tests()
   m.jptr = (int*)malloc(sizeof(int)*l_count);
   m.iptr = (int*)malloc(sizeof(int)*(mtx.rows_count+1));
   /* now fill arrays with proper values */
-      
-  qs(arr,sizeof(arr)/sizeof(int));
-  for (i = 0; i < sizeof(arr)/sizeof(int); ++ i)
-    printf("%d ",arr[i]);
-     
   
   free_sparse_matrix(&mtx);
   return result;
