@@ -631,7 +631,8 @@ void solve( fea_task *task,
             prescribed_boundary_array *presc_boundary)
 {
   /* initialize variables */
-  int i;
+  int i,j;
+  FILE* f;
   fea_solver *solver = (fea_solver*)0;
 #ifdef DUMP_DATA
   /* Dump all data in debug version */
@@ -657,6 +658,17 @@ void solve( fea_task *task,
     solver_local_stiffness(solver,i);
   /* sort column indicies in global matrix */
   sparse_matrix_reorder(&solver->global_mtx);
+
+  f = fopen("row_indexes.txt","w+");
+  for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
+  {
+    for ( j = 0; j <= solver->global_mtx.rows[i].last_index; ++ j)
+      fprintf(f,"%d ",solver->global_mtx.rows[i].indexes[j]+1);
+    fprintf(f,"\n");
+  }
+  fclose(f);
+  
+  
   /* fill the external forces vector */
   solver_create_forces_bc(solver);
   /* apply prescribed boundary conditions */
@@ -2760,23 +2772,23 @@ BOOL do_tests()
   m.rows_count = mtx.rows_count;
   m.cols_count = mtx.cols_count;
   /* fill diagonal */
-  m.diag = (real*)malloc(sizeof(real)*mtx.rows_count);
-  for (i = 0; i < mtx.rows_count; ++ i)
-    m.diag[i] = *sparse_matrix_element(&mtx,i,i);
+  /* m.diag = (real*)malloc(sizeof(real)*mtx.rows_count); */
+  /* for (i = 0; i < mtx.rows_count; ++ i) */
+  /*   m.diag[i] = *sparse_matrix_element(&mtx,i,i); */
   /* calculate number of upper-triangle elements */
   l_count = 0;
   u_count = 0;
-  for (i = 0; i < mtx.rows_count; ++ i)
-    for (j = 0; j <= mtx.rows[i].last_index; ++ j)
-      if ( i != j )
-        if ( mtx.rows[i].indexes[j] > i)
-          u_count ++;
-        else l_count ++;
+  /* for (i = 0; i < mtx.rows_count; ++ i) */
+  /*   for (j = 0; j <= mtx.rows[i].last_index; ++ j) */
+  /*     if ( i != j ) */
+  /*       if ( mtx.rows[i].indexes[j] > i) */
+  /*         u_count ++; */
+  /*       else l_count ++; */
   /* allocate memory for arrays */
-  m.lower_triangle = (real*)malloc(sizeof(real)*l_count);
-  m.upper_triangle = (real*)malloc(sizeof(real)*u_count);
-  m.jptr = (int*)malloc(sizeof(int)*l_count);
-  m.iptr = (int*)malloc(sizeof(int)*(mtx.rows_count+1));
+  /* m.lower_triangle = (real*)malloc(sizeof(real)*l_count); */
+  /* m.upper_triangle = (real*)malloc(sizeof(real)*u_count); */
+  /* m.jptr = (int*)malloc(sizeof(int)*l_count); */
+  /* m.iptr = (int*)malloc(sizeof(int)*(mtx.rows_count+1)); */
   /* now fill arrays with proper values */
   
   free_sparse_matrix(&mtx);
