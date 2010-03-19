@@ -267,16 +267,22 @@ typedef struct sparse_matrix_tag {
 /*
  * Sparse matrix CSLR format
  * used in sparse iterative solvers
- * 
+ * Constructed from Sparse Matrix in assumption of the symmetric
+ * matrix portrait
  */
 typedef struct sparse_matrix_cslr_tag {
   int rows_count;
   int cols_count;
-  real *diag;
-  real *lower_triangle;
-  real *upper_triangle;
-  int *jptr;
-  int *iptr;
+  int nonzeros;                 /* number of nonzero elements in matrix */
+  int triangle_nonzeros_count;  /* number of nonzero elements in
+                                 * upper or lower triangles */
+  real *diag;                   /* rows_count elements in matrix diagonal */
+  real *lower_triangle;         /* nonzero elements of the lower triangle */
+  real *upper_triangle;         /* nonzero elements of the upper triangle */
+  int *jptr;                    /* array of column/row indexes of the
+                                 * lower/upper triangles */
+  int *iptr;                    /* array of row/column offsets in jptr
+                                 * for lower or upper triangles */
 } sparse_matrix_cslr;
 
 /*
@@ -393,8 +399,19 @@ static void init_sparse_matrix(sparse_matrix* mtx,
  */
 static void free_sparse_matrix(sparse_matrix* mtx);
 
-/* Construct CSLR sparse matrix based on sparse_matrix format */
-void cslr_init(sparse_matrix* self, sparse_matrix_cslr* cslr);
+/*
+ * Construct CSLR sparse matrix based on sparse_matrix format
+ * mtx - is the (reordered) sparse matrix to take data from
+ * Acts as a copy-constructor
+ */
+static void init_sparse_matrix_cslr(sparse_matrix_cslr* self,
+                                    sparse_matrix* mtx);
+/*
+ * Destructor for a sparse matrix in CSLR format
+ * This function doesn't deallocate memory for the matrix itself,
+ * only for its structures.
+ */
+static void free_sparse_matrix_cslr(sparse_matrix_cslr* self);
 
 /* getters/setters for a sparse matrix */
 
@@ -442,7 +459,10 @@ static void sparse_matrix_solve_cg(sparse_matrix* self,
 
 #ifdef DUMP_DATA
 static void sparse_matrix_dump(sparse_matrix* self);
+static void sparse_matrix_cslr_dump(sparse_matrix_cslr* self);
 #endif
+
+
 
 
 /*************************************************************/
@@ -631,10 +651,12 @@ void solve( fea_task *task,
             prescribed_boundary_array *presc_boundary)
 {
   /* initialize variables */
-  int i,j;
-  FILE* f;
   fea_solver *solver = (fea_solver*)0;
+  int i;
+  
 #ifdef DUMP_DATA
+  int j;
+  FILE* f;
   /* Dump all data in debug version */
   dump_input_data(task,fea_params,nodes,elements,presc_boundary);
 #endif
@@ -659,6 +681,7 @@ void solve( fea_task *task,
   /* sort column indicies in global matrix */
   sparse_matrix_reorder(&solver->global_mtx);
 
+#ifdef DUMP_DATA
   f = fopen("row_indexes.txt","w+");
   for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
   {
@@ -667,7 +690,7 @@ void solve( fea_task *task,
     fprintf(f,"\n");
   }
   fclose(f);
-  
+#endif  
   
   /* fill the external forces vector */
   solver_create_forces_bc(solver);
@@ -792,10 +815,106 @@ void free_sparse_matrix(sparse_matrix* mtx)
   }
 }
 
-void cslr_init(sparse_matrix* self, sparse_matrix_cslr* cslr)
+void init_sparse_matrix_cslr(sparse_matrix_cslr* self,sparse_matrix* mtx)
 {
+  /*
+   * Construct CSLR matrix from the sparse_matrix
+   * with symmetric portrait
+   */
+  int i,j,k,iptr,l_count,u_count,column;
+  real* pvalue = 0;
+
+  self->rows_count = mtx->rows_count;
+  self->cols_count = mtx->cols_count;
+  /*
+   * get an information about number of nonzero elements
+   */
+  self->nonzeros = 0;
+  for (i = 0; i < mtx->rows_count; ++ i)
+    self->nonzeros += mtx->rows[i].last_index + 1;
   
+  /* calculate number of upper-triangle elements */
+  l_count = 0;
+  u_count = 0;
+  for (i = 0; i < mtx->rows_count; ++ i)
+    for (j = 0; j <= mtx->rows[i].last_index; ++ j)
+      if ( mtx->rows[i].indexes[j] > i)
+        u_count ++;
+      else if (mtx->rows[i].indexes[j] < i)
+        l_count ++;
+  /*
+   * check if the number of upper triangle nonzero elements
+   * is the same as number of lower triangle nonzero elements
+   */
+  assert(l_count == u_count);
+  self->triangle_nonzeros_count = l_count;
+  
+  /* allocate memory for arrays */
+  self->diag = (real*)malloc(sizeof(real)*mtx->rows_count);
+  self->lower_triangle = l_count ? (real*)malloc(sizeof(real)*l_count) : 0;
+  self->upper_triangle = u_count ? (real*)malloc(sizeof(real)*u_count) : 0;
+  self->jptr = l_count ? (int*)malloc(sizeof(int)*l_count)  : 0;
+  self->iptr = (int*)malloc(sizeof(int)*(mtx->rows_count+1));
+
+  /* fill diagonal */
+  for (i = 0; i < mtx->rows_count; ++ i)
+  {
+    pvalue = sparse_matrix_element(mtx,i,i);
+    self->diag[i] = pvalue ? *pvalue : 0;
+  }
+  /* now fill arrays with proper values */
+  u_count = 0,l_count = 0;
+  for (i = 0; i < mtx->rows_count; ++ i)
+  {
+    iptr = -1;
+    self->iptr[i] = 0;
+    for (j = 0; j <= mtx->rows[i].last_index; ++ j)
+    {
+      if ( mtx->rows[i].indexes[j] < i)
+      {
+        /*
+         * set a flag what we found the first nonzero element in
+         * current row in lower triangle
+         */
+        if (iptr == -1)
+          iptr  = l_count;
+        /* fill lower triangle values */
+        column = mtx->rows[i].indexes[j];
+        self->jptr[l_count] = column;
+        self->lower_triangle[l_count] = mtx->rows[i].values[j];
+        /* fill upper triangle values - column-wise */
+        for ( k = 0; k <= mtx->rows[column].last_index; ++ k)
+          if (mtx->rows[column].indexes[k] == i)
+          {
+            self->upper_triangle[l_count] =
+              mtx->rows[column].values[k];
+            break;
+          }
+        l_count ++;
+      }
+    }
+    self->iptr[i] = iptr == -1 ? l_count : iptr;
+  }
+  /* finalize iptr array */
+  self->iptr[i] = self->triangle_nonzeros_count;
 }
+
+void free_sparse_matrix_cslr(sparse_matrix_cslr* self)
+{
+  if (self)
+  {
+    self->rows_count = 0;
+    self->cols_count = 0;
+    self->nonzeros = 0;
+    self->triangle_nonzeros_count = 0;
+    free(self->diag);
+    free(self->lower_triangle);
+    free(self->upper_triangle);
+    free(self->jptr);
+    free(self->iptr);
+  }
+}
+
 
 real* sparse_matrix_element(sparse_matrix* self,int i, int j)
 {
@@ -931,10 +1050,13 @@ void sparse_matrix_mv(sparse_matrix* self,real* x, real* y)
 
 void sparse_matrix_solve(sparse_matrix* self,real* b,real* x)
 {
+  sparse_matrix_cslr matrix;
   real tolerance = 1e-15;
   int max_iter = 20000;
 
+  init_sparse_matrix_cslr(&matrix,self);
   sparse_matrix_solve_cg(self,b,b,&max_iter,&tolerance,x);
+  free_sparse_matrix_cslr(&matrix);
 }
 
 void sparse_matrix_solve_cg(sparse_matrix* self,
@@ -1075,6 +1197,36 @@ void sparse_matrix_dump(sparse_matrix* self)
     fprintf(f,"\n");
   }
   fclose(f);
+}
+
+void sparse_matrix_cslr_dump(sparse_matrix_cslr* self)
+{
+  int i;
+  
+  printf("adiag = [");
+  for ( i = 0; i < self->rows_count; ++ i )
+    printf("%.1f ",self->diag[i]);
+  printf("]\n");
+
+  printf("altr = [");
+  for ( i = 0; i < self->triangle_nonzeros_count; ++ i )
+    printf("%.1f ",self->lower_triangle[i]);
+  printf("]\n");
+
+  printf("autr = [");
+  for ( i = 0; i < self->triangle_nonzeros_count; ++ i )
+    printf("%.1f ",self->upper_triangle[i]);
+  printf("]\n");
+  
+  printf("jptr = [");
+  for ( i = 0; i < self->triangle_nonzeros_count; ++ i )
+    printf("%d ",self->jptr[i]+1);
+  printf("]\n");
+
+  printf("iptr = [");
+  for ( i = 0; i < self->triangle_nonzeros_count-1; ++ i )
+    printf("%d ",self->iptr[i]+1);
+  printf("]\n");
 }
 #endif
 
@@ -2732,10 +2884,8 @@ BOOL initial_data_load(char *filename,
 BOOL do_tests()
 {
   BOOL result = TRUE;
-  sparse_matrix mtx;
+  sparse_matrix mtx,mtx2;
   real v[3],x[3];
-
-  int i,j,l_count,u_count,k,l,nonzeros = 0;
   sparse_matrix_cslr m;
 
   /* 1st test, matrix solver  */
@@ -2767,30 +2917,38 @@ BOOL do_tests()
               fabs(x[1]-2) > TOLERANCE ||
               fabs(x[2]-3) > TOLERANCE);
 
-  for (i = 0; i < mtx.rows_count; ++ i)
-    nonzeros += mtx.rows[i].last_index + 1;
-  m.rows_count = mtx.rows_count;
-  m.cols_count = mtx.cols_count;
-  /* fill diagonal */
-  /* m.diag = (real*)malloc(sizeof(real)*mtx.rows_count); */
-  /* for (i = 0; i < mtx.rows_count; ++ i) */
-  /*   m.diag[i] = *sparse_matrix_element(&mtx,i,i); */
-  /* calculate number of upper-triangle elements */
-  l_count = 0;
-  u_count = 0;
-  /* for (i = 0; i < mtx.rows_count; ++ i) */
-  /*   for (j = 0; j <= mtx.rows[i].last_index; ++ j) */
-  /*     if ( i != j ) */
-  /*       if ( mtx.rows[i].indexes[j] > i) */
-  /*         u_count ++; */
-  /*       else l_count ++; */
-  /* allocate memory for arrays */
-  /* m.lower_triangle = (real*)malloc(sizeof(real)*l_count); */
-  /* m.upper_triangle = (real*)malloc(sizeof(real)*u_count); */
-  /* m.jptr = (int*)malloc(sizeof(int)*l_count); */
-  /* m.iptr = (int*)malloc(sizeof(int)*(mtx.rows_count+1)); */
-  /* now fill arrays with proper values */
+
+  /* Sparse matrix from Balandin
+   * 9  0  0  3  1  0  1
+   * 0  11 2  1  0  0  2
+   * 0  1  10 2  0  0  0
+   * 2  1  2  9  1  0  0
+   * 1  0  0  1  12 0  1
+   * 0  0  0  0  0  8  0
+   * 2  2  0  0  3  0  8
+   */
+   
+  init_sparse_matrix(&mtx2,7,7,5);
+#define MTX(m,i,j,v) sparse_matrix_element_add((m),(i),(j),(v));
+  MTX(&mtx2,0,0,9);MTX(&mtx2,0,3,3);MTX(&mtx2,0,4,1);MTX(&mtx2,0,6,1);
+  MTX(&mtx2,1,1,11);MTX(&mtx2,1,2,2);MTX(&mtx2,1,3,1);MTX(&mtx2,1,6,2);
+  MTX(&mtx2,2,1,1);MTX(&mtx2,2,2,10);MTX(&mtx2,2,3,2);
+  MTX(&mtx2,3,0,2);MTX(&mtx2,3,1,1);MTX(&mtx2,3,2,2);MTX(&mtx2,3,3,9);MTX(&mtx2,3,4,1);
+  MTX(&mtx2,4,0,1);MTX(&mtx2,4,3,1);MTX(&mtx2,4,4,12);MTX(&mtx2,4,6,1);
+  MTX(&mtx2,5,5,8);
+  MTX(&mtx2,6,0,2);MTX(&mtx2,6,1,2);MTX(&mtx2,6,4,3);MTX(&mtx2,6,6,8);
+#undef MTX
+
+  sparse_matrix_reorder(&mtx2);
+  
+  init_sparse_matrix_cslr(&m,&mtx2);
+
+#ifdef DUMP_DATA
+  sparse_matrix_cslr_dump(&m);
+#endif  
   
   free_sparse_matrix(&mtx);
+  free_sparse_matrix(&mtx2);
+  free_sparse_matrix_cslr(&m);
   return result;
 }
