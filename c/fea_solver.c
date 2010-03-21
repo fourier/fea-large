@@ -270,7 +270,7 @@ typedef struct sparse_matrix_tag {
  * Constructed from Sparse Matrix in assumption of the symmetric
  * matrix portrait
  */
-typedef struct sparse_matrix_cslr_tag {
+typedef struct sparse_matrix_skyline_tag {
   int rows_count;
   int cols_count;
   int nonzeros;                 /* number of nonzero elements in matrix */
@@ -283,7 +283,7 @@ typedef struct sparse_matrix_cslr_tag {
                                  * lower/upper triangles */
   int *iptr;                    /* array of row/column offsets in jptr
                                  * for lower or upper triangles */
-} sparse_matrix_cslr;
+} sparse_matrix_skyline;
 
 /*
  * A main application structure which shall contain all
@@ -404,14 +404,14 @@ static void free_sparse_matrix(sparse_matrix* mtx);
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
  */
-static void init_sparse_matrix_cslr(sparse_matrix_cslr* self,
-                                    sparse_matrix* mtx);
+static void init_sparse_matrix_skyline(sparse_matrix_skyline* self,
+                                       sparse_matrix* mtx);
 /*
  * Destructor for a sparse matrix in CSLR format
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sparse_matrix_cslr(sparse_matrix_cslr* self);
+static void free_sparse_matrix_skyline(sparse_matrix_skyline* self);
 
 /* getters/setters for a sparse matrix */
 
@@ -451,15 +451,47 @@ static void sparse_matrix_solve(sparse_matrix* self,real* b,real* x);
  * x - output vector
  */
 static void sparse_matrix_solve_cg(sparse_matrix* self,
-                                real* b,
-                                real* x0,
-                                int* max_iter,
-                                real* tolerance,
-                                real* x);
+                                   real* b,
+                                   real* x0,
+                                   int* max_iter,
+                                   real* tolerance,
+                                   real* x);
+
+/*
+ * Preconditioned Conjugate Grade solver
+ * Preconditioner in form of the ILU decomposition
+ * self - matrix
+ * b - right-part vector
+ * x0 - first approximation of the solution
+ * max_iter - pointer to maximum number of iterations, MAX_ITER if zero;
+ * will contain a number of iterations passed
+ * tolerance - pointer to desired tolerance value, TOLERANCE if zero;
+ * will contain norm of the residual at the end of iteration
+ * x - output vector
+ */
+static void sparse_matrix_solve_pcg(sparse_matrix* self,
+                                   real* b,
+                                   real* x0,
+                                   int* max_iter,
+                                   real* tolerance,
+                                   real* x);
+
+
+/*
+ * Create ILU decomposition of the sparse matrix in skyline format
+ * lu_diag - ILU decomposition diagonal
+ * lu_lowertr - lower triangle of the ILU decomposition
+ * lu_uppertr - upper triangle of the ILU decomposition
+ */
+static void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
+                                      real *lu_diag,
+                                      real *lu_lowertr,
+                                      real *lu_uppertr);
+
 
 #ifdef DUMP_DATA
 static void sparse_matrix_dump(sparse_matrix* self);
-static void sparse_matrix_cslr_dump(sparse_matrix_cslr* self);
+static void sparse_matrix_skyline_dump(sparse_matrix_skyline* self);
 #endif
 
 
@@ -815,7 +847,7 @@ void free_sparse_matrix(sparse_matrix* mtx)
   }
 }
 
-void init_sparse_matrix_cslr(sparse_matrix_cslr* self,sparse_matrix* mtx)
+void init_sparse_matrix_skyline(sparse_matrix_skyline* self,sparse_matrix* mtx)
 {
   /*
    * Construct CSLR matrix from the sparse_matrix
@@ -899,7 +931,7 @@ void init_sparse_matrix_cslr(sparse_matrix_cslr* self,sparse_matrix* mtx)
   self->iptr[i] = self->triangle_nonzeros_count;
 }
 
-void free_sparse_matrix_cslr(sparse_matrix_cslr* self)
+void free_sparse_matrix_skyline(sparse_matrix_skyline* self)
 {
   if (self)
   {
@@ -1050,13 +1082,9 @@ void sparse_matrix_mv(sparse_matrix* self,real* x, real* y)
 
 void sparse_matrix_solve(sparse_matrix* self,real* b,real* x)
 {
-  sparse_matrix_cslr matrix;
   real tolerance = 1e-15;
   int max_iter = 20000;
-
-  init_sparse_matrix_cslr(&matrix,self);
-  sparse_matrix_solve_cg(self,b,b,&max_iter,&tolerance,x);
-  free_sparse_matrix_cslr(&matrix);
+  sparse_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x);
 }
 
 void sparse_matrix_solve_cg(sparse_matrix* self,
@@ -1160,6 +1188,123 @@ void sparse_matrix_solve_cg(sparse_matrix* self,
   free(temp);
 }
 
+void sparse_matrix_solve_pcg(sparse_matrix* self,
+                             real* b,
+                             real* x0,
+                             int* max_iter,
+                             real* tolerance,
+                             real* x)
+{
+  /* variables */
+  int i,j;
+  real alpha, beta,a1,a2;
+  real residn = 0;
+  int size = sizeof(real)*self->rows_count;
+  int msize = self->rows_count;
+  real max_iterations = max_iter ? *max_iter : MAX_ITER;
+  real tol = tolerance ? *tolerance : TOLERANCE;
+  
+  /* skyline form of the initial matrix */
+  sparse_matrix_skyline A;
+  real *lu_diag;
+  real *lu_lowertr;
+  real *lu_uppertr;
+
+  real* r;              /* residual */
+  real* p;              /* search direction */
+  real* temp;
+  
+  /* allocate memory for vectors */
+  r = malloc(size);
+  p = malloc(size);
+  temp = malloc(size);
+  /* initialize skyline matrix for ILU decomposition */
+  init_sparse_matrix_skyline(&A,self);
+  
+  lu_diag = malloc(sizeof(real)*msize);
+  lu_lowertr = malloc(sizeof(real)*A.triangle_nonzeros_count);
+  lu_uppertr = malloc(sizeof(real)*A.triangle_nonzeros_count);
+
+  
+  /* clear vectors */
+  memset(r,0,size);
+  memset(p,0,size);
+  memset(temp,0,size);
+
+  sparse_matrix_skyline_ilu(&A,lu_diag,lu_lowertr,lu_uppertr);
+  
+  /* x = x_0 */
+  for ( i = 0; i < msize; ++ i)
+    x[i] = x0[i];
+
+  /* r_0 = b - A*x_0 */
+  sparse_matrix_mv(self,b,r);
+  for ( i = 0; i < msize; ++ i)
+    r[i] = b[i] - r[i];
+
+  /* p_0 = r_0 */
+  memcpy(p,r,size);
+  
+  /* CG loop */
+  for ( j = 0; j < max_iterations; j ++ )
+  {
+    /* temp = A*p_j */
+    sparse_matrix_mv(self,p,temp);
+    /* compute (r_j,r_j) and (A*p_j,p_j) */
+    a1 = 0; a2 = 0;
+    for (i = 0; i < msize; ++ i)
+    {
+      a1 += r[i]*r[i]; /* (r_j,r_j) */
+      a2 += p[i]*temp[i];      /* (A*p_j,p_j) */
+    }
+
+    /*            (r_j,r_j) 
+     * alpha_j = -----------
+     *           (A*p_j,p_j)
+     */                     
+    alpha = a1/a2;              
+                                
+    /* x_{j+1} = x_j+alpha_j*p_j */
+    for (i = 0; i < msize; ++ i)
+      x[i] += alpha*p[i];
+    
+    /* r_{j+1} = r_j-alpha_j*A*p_j */
+    for (i = 0; i < msize; ++ i)
+      r[i] -= alpha*temp[i]; 
+
+    /* check for convergence */
+    residn = fabs(r[0]);
+    for (i = 1; i < msize; ++ i )
+      if (fabs(r[i]) > residn) residn = fabs(r[i]);
+    if (residn < tol )
+      break;
+
+    /* compute (r_{j+1},r_{j+1}) */
+    a2 = 0;
+    for (i = 0; i < msize; ++ i)
+      a2 += r[i]*r[i];
+
+    /* b_j = (r_{j+1},r_{j+1})/(r_j,r_j) */
+    beta = a2/a1;
+    
+    /* d_{j+1} = r_{j+1} + beta_j*d_j */
+    for (i = 0; i < msize; ++ i)
+      p[i] = r[i] + beta*p[i];
+  }
+  *max_iter = j;
+  *tolerance = residn;
+
+  free(lu_diag);
+  free(lu_lowertr);
+  free(lu_uppertr);
+  
+  free(r);
+  free(p);
+  free(temp);
+
+  free_sparse_matrix_skyline(&A);
+}
+
 
 #ifdef DUMP_DATA
 void sparse_matrix_dump(sparse_matrix* self)
@@ -1199,7 +1344,23 @@ void sparse_matrix_dump(sparse_matrix* self)
   fclose(f);
 }
 
-void sparse_matrix_cslr_dump(sparse_matrix_cslr* self)
+void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
+                               real *lu_diag,
+                               real *lu_lowertr,
+                               real *lu_uppertr)
+{
+  int i,j;
+  /* clear arrays before construction of the ILU decomposition */
+  memset(lu_diag,0,self->rows_count);
+  memset(lu_lowertr,0,self->triangle_nonzeros_count);
+  memset(lu_uppertr,0,self->triangle_nonzeros_count);
+
+  
+  
+}
+
+
+void sparse_matrix_skyline_dump(sparse_matrix_skyline* self)
 {
   int i;
   
@@ -2886,7 +3047,7 @@ BOOL do_tests()
   BOOL result = TRUE;
   sparse_matrix mtx,mtx2;
   real v[3],x[3];
-  sparse_matrix_cslr m;
+  sparse_matrix_skyline m;
 
   /* 1st test, matrix solver  */
   
@@ -2941,14 +3102,14 @@ BOOL do_tests()
 
   sparse_matrix_reorder(&mtx2);
   
-  init_sparse_matrix_cslr(&m,&mtx2);
+  init_sparse_matrix_skyline(&m,&mtx2);
 
 #ifdef DUMP_DATA
-  sparse_matrix_cslr_dump(&m);
+  sparse_matrix_skyline_dump(&m);
 #endif  
   
   free_sparse_matrix(&mtx);
   free_sparse_matrix(&mtx2);
-  free_sparse_matrix_cslr(&m);
+  free_sparse_matrix_skyline(&m);
   return result;
 }
