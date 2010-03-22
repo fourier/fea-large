@@ -1235,7 +1235,7 @@ void sparse_matrix_solve_pcg(sparse_matrix* self,
   memset(p,0,size);
   memset(temp,0,size);
 
-  sparse_matrix_skyline_ilu(&A,lu_diag,lu_lowertr,lu_uppertr);
+  /* sparse_matrix_skyline_ilu(&A,lu_diag,lu_lowertr,lu_uppertr); */
   
   /* x = x_0 */
   for ( i = 0; i < msize; ++ i)
@@ -1323,13 +1323,20 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
 
   for (k = 0; k < self->rows_count; ++ k)
   {
+    printf("%d: ",k+1);
     for ( j = self->iptr[k]; j < self->iptr[k+1]; ++ j)
     {
+      printf("%d - ",j+1); 
       sum = 0;
-      for ( i = self->iptr[j]; i < self->iptr[j]; ++ i)
-        sum += lu_lowertr[i]*lu_uppertr[i];
-      lu_lowertr[j] = (self->lower_triangle[j] - sum)/lu_diag[k];
+      for ( i = self->iptr[k]; i < j; ++ i)
+      {
+        printf("(%d) ",i+1);
+        /* sum += lu_lowertr[i]*lu_uppertr[i]; */
+      }
+      /* printf(" = %f",sum); */
+      /* lu_lowertr[j] = (self->lower_triangle[j] - sum)/lu_diag[k]; */
     }
+    printf("\n");
   }
   
 }
@@ -3077,6 +3084,7 @@ BOOL do_tests()
   real *lu_diag;
   real *lu_lowertr;
   real *lu_uppertr;
+  int i;
   
   /* 1st test, matrix solver  */
   
@@ -3133,17 +3141,32 @@ BOOL do_tests()
   
   init_sparse_matrix_skyline(&m,&mtx2);
 
+#ifdef DUMP_DATA
+  sparse_matrix_skyline_dump(&m);
+#endif
+
   lu_diag = malloc(sizeof(real)*m.rows_count);
   lu_lowertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
   lu_uppertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
 
   sparse_matrix_skyline_ilu(&m,lu_diag,lu_lowertr,lu_uppertr);
-  
-  
-#ifdef DUMP_DATA
-  sparse_matrix_skyline_dump(&m);
-#endif
 
+  printf("lu_diag = [");
+  for (i = 0; i <  m.rows_count; ++ i)
+    printf("%f ",lu_diag[i]);
+  printf("];\n");
+  
+  printf("lu_lowertr = [");
+  for (i = 0; i <  m.triangle_nonzeros_count; ++ i)
+    printf("%f ",lu_lowertr[i]);
+  printf("];\n");
+  
+  printf("lu_uppertr = [");
+  for (i = 0; i <  m.triangle_nonzeros_count; ++ i)
+    printf("%f ",lu_uppertr[i]);
+  printf("];\n");
+
+  
   free(lu_diag);
   free(lu_lowertr);
   free(lu_uppertr);
@@ -3151,5 +3174,6 @@ BOOL do_tests()
   free_sparse_matrix(&mtx);
   free_sparse_matrix(&mtx2);
   free_sparse_matrix_skyline(&m);
+  return FALSE;
   return result;
 }
