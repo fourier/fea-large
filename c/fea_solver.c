@@ -1349,13 +1349,23 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
                                real *lu_lowertr,
                                real *lu_uppertr)
 {
-  int i,j;
+  int i,j,k;
+  real sum;
   /* clear arrays before construction of the ILU decomposition */
   memset(lu_diag,0,self->rows_count);
   memset(lu_lowertr,0,self->triangle_nonzeros_count);
   memset(lu_uppertr,0,self->triangle_nonzeros_count);
 
-  
+  for (k = 0; k < self->rows_count; ++ k)
+  {
+    for ( j = self->iptr[k]; j < self->iptr[k+1]; ++ j)
+    {
+      sum = 0;
+      for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
+        sum += self->lu_lowertr[i]*self->lu_uppertr
+      lu_lowertr[j] = 
+    }
+  }
   
 }
 
