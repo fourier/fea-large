@@ -714,14 +714,16 @@ void solve( fea_task *task,
   sparse_matrix_reorder(&solver->global_mtx);
 
 #ifdef DUMP_DATA
-  f = fopen("row_indexes.txt","w+");
-  for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
+  if (f = fopen("row_indexes.txt","w+"))
   {
-    for ( j = 0; j <= solver->global_mtx.rows[i].last_index; ++ j)
-      fprintf(f,"%d ",solver->global_mtx.rows[i].indexes[j]+1);
-    fprintf(f,"\n");
+    for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
+    {
+      for ( j = 0; j <= solver->global_mtx.rows[i].last_index; ++ j)
+        fprintf(f,"%d ",solver->global_mtx.rows[i].indexes[j]+1);
+      fprintf(f,"\n");
+    }
+    fclose(f);
   }
-  fclose(f);
 #endif  
   
   /* fill the external forces vector */
@@ -764,31 +766,33 @@ void dump_input_data( fea_task *task,
 {
   int i,j;
   FILE *f;
-  f = fopen("input_data.txt","w+");
-  fprintf(f,"nodes\n");
-  for ( i = 0; i < nodes->nodes_count; ++ i)
+  if (f = fopen("input_data.txt","w+"))
   {
-    for ( j = 0; j < MAX_DOF; ++ j)
-      fprintf(f,"%f ", nodes->nodes[i][j]);
-    fprintf(f,"\n");
+    fprintf(f,"nodes\n");
+    for ( i = 0; i < nodes->nodes_count; ++ i)
+    {
+      for ( j = 0; j < MAX_DOF; ++ j)
+        fprintf(f,"%f ", nodes->nodes[i][j]);
+      fprintf(f,"\n");
+    }
+    fprintf(f,"elements\n");
+    for ( i = 0; i < elements->elements_count; ++ i)
+    {
+      for ( j = 0; j < fea_params->nodes_per_element; ++ j)
+        fprintf(f,"%d ", elements->elements[i][j]);
+      fprintf(f,"\n");
+    }
+    fprintf(f,"boundary\n");
+    for ( i = 0; i < presc_boundary->prescribed_nodes_count; ++ i)
+    {
+      fprintf(f,"%d %f %f %f %d\n",presc_boundary->prescribed_nodes[i].node_number,
+              presc_boundary->prescribed_nodes[i].values[0],
+              presc_boundary->prescribed_nodes[i].values[1],
+              presc_boundary->prescribed_nodes[i].values[2],
+              presc_boundary->prescribed_nodes[i].type);
+    }
+    fclose(f);
   }
-  fprintf(f,"elements\n");
-  for ( i = 0; i < elements->elements_count; ++ i)
-  {
-    for ( j = 0; j < fea_params->nodes_per_element; ++ j)
-      fprintf(f,"%d ", elements->elements[i][j]);
-    fprintf(f,"\n");
-  }
-  fprintf(f,"boundary\n");
-  for ( i = 0; i < presc_boundary->prescribed_nodes_count; ++ i)
-  {
-    fprintf(f,"%d %f %f %f %d\n",presc_boundary->prescribed_nodes[i].node_number,
-            presc_boundary->prescribed_nodes[i].values[0],
-            presc_boundary->prescribed_nodes[i].values[1],
-            presc_boundary->prescribed_nodes[i].values[2],
-            presc_boundary->prescribed_nodes[i].type);
-  }
-  fclose(f);
 }
 #endif
 
@@ -1305,45 +1309,6 @@ void sparse_matrix_solve_pcg(sparse_matrix* self,
   free_sparse_matrix_skyline(&A);
 }
 
-
-#ifdef DUMP_DATA
-void sparse_matrix_dump(sparse_matrix* self)
-{
-  FILE* f;
-  int i,j;
-  real *pvalue,value;
-  f = fopen("mywidths.txt","w+");
-  for ( i = 0; i < self->rows_count; ++ i)
-    fprintf(f,"%d: %d\n",i+1,self->rows[i].last_index + 1);
-  fclose(f);
-  
-  f = fopen("rows.txt","w+");
-  for ( i = 0; i < self->rows_count; ++ i)
-  {
-    for ( j = 0; j <= self->rows[i].last_index; ++ j)
-      fprintf(f,"%d ",self->rows[i].indexes[j] + 1);
-    fprintf(f,"\n");
-    for ( j = 0; j <= self->rows[i].last_index; ++ j)
-      fprintf(f,"%f ",self->rows[i].values[j]);
-    fprintf(f,"\n\n");
-  }
-  fclose(f);
-
-
-  f = fopen("global_matrix_c.txt","w+");
-  for (i = 0; i < self->rows_count; ++ i)
-  {
-    for (j = 0; j < self->rows_count; ++ j)
-    {
-      pvalue = sparse_matrix_element(self,i,j);
-      value = pvalue ? *pvalue : 0;
-      fprintf(f,"%.5f ",value);
-    }
-    fprintf(f,"\n");
-  }
-  fclose(f);
-}
-
 void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
                                real *lu_diag,
                                real *lu_lowertr,
@@ -1361,13 +1326,58 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
     for ( j = self->iptr[k]; j < self->iptr[k+1]; ++ j)
     {
       sum = 0;
-      for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
-        sum += self->lu_lowertr[i]*self->lu_uppertr
-      lu_lowertr[j] = 
+      for ( i = self->iptr[j]; i < self->iptr[j]; ++ i)
+        sum += lu_lowertr[i]*lu_uppertr[i];
+      lu_lowertr[j] = (self->lower_triangle[j] - sum)/lu_diag[k];
     }
   }
   
 }
+
+
+
+#ifdef DUMP_DATA
+void sparse_matrix_dump(sparse_matrix* self)
+{
+  FILE* f;
+  int i,j;
+  real *pvalue,value;
+  if (f = fopen("mywidths.txt","w+"))
+  {
+    for ( i = 0; i < self->rows_count; ++ i)
+      fprintf(f,"%d: %d\n",i+1,self->rows[i].last_index + 1);
+    fclose(f);
+  }
+  if( f = fopen("rows.txt","w+"))
+  {
+    for ( i = 0; i < self->rows_count; ++ i)
+    {
+      for ( j = 0; j <= self->rows[i].last_index; ++ j)
+        fprintf(f,"%d ",self->rows[i].indexes[j] + 1);
+      fprintf(f,"\n");
+      for ( j = 0; j <= self->rows[i].last_index; ++ j)
+        fprintf(f,"%f ",self->rows[i].values[j]);
+      fprintf(f,"\n\n");
+    }
+    fclose(f);
+  }
+
+  if (f = fopen("global_matrix_c.txt","w+"))
+  {
+    for (i = 0; i < self->rows_count; ++ i)
+    {
+      for (j = 0; j < self->rows_count; ++ j)
+      {
+        pvalue = sparse_matrix_element(self,i,j);
+        value = pvalue ? *pvalue : 0;
+        fprintf(f,"%.5f ",value);
+      }
+      fprintf(f,"\n");
+    }
+    fclose(f);
+  }
+}
+
 
 
 void sparse_matrix_skyline_dump(sparse_matrix_skyline* self)
@@ -1565,37 +1575,39 @@ static void solver_dump_shape_gradients(fea_solver* self,
 {
   int i,j;
   FILE* f;
-  f = fopen("gradients.txt","w+");
-  fprintf(f,"\nElement %d:\n",element);
-  for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
-    fprintf(f,"%d ",self->elements->elements[element][j]);
-  fprintf(f,"\nNodes:\n");
-  for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+  if (f = fopen("gradients.txt","w+"))
   {
-    for ( i = 0; i < MAX_DOF; ++ i)
-      fprintf(f,"%f ",self->nodes->nodes[self->elements->elements[element][j]][i]);
-    fprintf(f,"\n");
-  }
-  fprintf(f,"\nGauss node %d:\n",gauss);
-  for ( i = 0; i < MAX_DOF; ++ i)
-    fprintf(f,"%f ",self->elements_db.gauss_nodes_data[gauss][i+1]);
-  fprintf(f,"\n\nDeterminant of Jacobi matrix(det(J): %f\n",grads->detJ);
-    
-  fprintf(f,"\nInverse Jacobi matrix(J^-1):\n");
-  for ( i = 0; i < MAX_DOF; ++ i)
-  {
-    for ( j = 0; j < MAX_DOF; ++ j)
-      fprintf(f,"%f ",J[i][j]);
-    fprintf(f,"\n");
-  }
-  fprintf(f,"\nMatrix of gradients:\n");
-  for ( i = 0; i < MAX_DOF; ++ i)
-  {
+    fprintf(f,"\nElement %d:\n",element);
     for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
-      fprintf(f,"%.5f ",grads->grad[i][j]);
-    fprintf(f,"\n");
+      fprintf(f,"%d ",self->elements->elements[element][j]);
+    fprintf(f,"\nNodes:\n");
+    for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+    {
+      for ( i = 0; i < MAX_DOF; ++ i)
+        fprintf(f,"%f ",self->nodes->nodes[self->elements->elements[element][j]][i]);
+      fprintf(f,"\n");
+    }
+    fprintf(f,"\nGauss node %d:\n",gauss);
+    for ( i = 0; i < MAX_DOF; ++ i)
+      fprintf(f,"%f ",self->elements_db.gauss_nodes_data[gauss][i+1]);
+    fprintf(f,"\n\nDeterminant of Jacobi matrix(det(J): %f\n",grads->detJ);
+    
+    fprintf(f,"\nInverse Jacobi matrix(J^-1):\n");
+    for ( i = 0; i < MAX_DOF; ++ i)
+    {
+      for ( j = 0; j < MAX_DOF; ++ j)
+        fprintf(f,"%f ",J[i][j]);
+      fprintf(f,"\n");
+    }
+    fprintf(f,"\nMatrix of gradients:\n");
+    for ( i = 0; i < MAX_DOF; ++ i)
+    {
+      for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+        fprintf(f,"%.5f ",grads->grad[i][j]);
+      fprintf(f,"\n");
+    }
+    fclose(f);
   }
-  fclose(f);
 }
 #endif
 
@@ -1690,14 +1702,16 @@ void solver_dump_local_stiffness(fea_solver* self,real **stiff,int el)
   char fname[50];
   int size = self->fea_params->nodes_per_element*self->task->dof;
   sprintf(fname,"elements/K%d.txt",el);
-  f = fopen(fname,"w+");
-  for ( i = 0; i < size; ++ i)
+  if (f = fopen(fname,"w+"))
   {
-    for ( j = 0; j < size; ++ j)
-      fprintf(f,"%.5f ",stiff[i][j]);
-    fprintf(f,"\n");
+    for ( i = 0; i < size; ++ i)
+    {
+      for ( j = 0; j < size; ++ j)
+        fprintf(f,"%.5f ",stiff[i][j]);
+      fprintf(f,"\n");
+    }
+    fclose(f);
   }
-  fclose(f);
 }
 #endif
 
@@ -1731,19 +1745,21 @@ void dump_ctensor_as_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
   int I,J;
   int i = 0, j = 0, k = 0, l = 0;
   FILE* f;
-  f = fopen("ctensor.txt","w+");
-  fprintf(f,"\nConstitutive matrix:\n"); 
-  for (I = 0; I < 6; ++ I)
+  if (f = fopen("ctensor.txt","w+"))
   {
-    matrix_tensor_mapping(I,&i,&j);
-    for (J = 0; J < 6;++ J)
+    fprintf(f,"\nConstitutive matrix:\n"); 
+    for (I = 0; I < 6; ++ I)
     {
-      matrix_tensor_mapping(J,&k,&l);
-      fprintf(f,"%f ",ctensor[i][j][k][l]);
+      matrix_tensor_mapping(I,&i,&j);
+      for (J = 0; J < 6;++ J)
+      {
+        matrix_tensor_mapping(J,&k,&l);
+        fprintf(f,"%f ",ctensor[i][j][k][l]);
+      }
+      fprintf(f,"\n");
     }
-    fprintf(f,"\n");
+    fclose(f);
   }
-  fclose(f);
 }
 #endif
 
@@ -3058,7 +3074,10 @@ BOOL do_tests()
   sparse_matrix mtx,mtx2;
   real v[3],x[3];
   sparse_matrix_skyline m;
-
+  real *lu_diag;
+  real *lu_lowertr;
+  real *lu_uppertr;
+  
   /* 1st test, matrix solver  */
   
   /*
@@ -3114,9 +3133,20 @@ BOOL do_tests()
   
   init_sparse_matrix_skyline(&m,&mtx2);
 
+  lu_diag = malloc(sizeof(real)*m.rows_count);
+  lu_lowertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
+  lu_uppertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
+
+  sparse_matrix_skyline_ilu(&m,lu_diag,lu_lowertr,lu_uppertr);
+  
+  
 #ifdef DUMP_DATA
   sparse_matrix_skyline_dump(&m);
-#endif  
+#endif
+
+  free(lu_diag);
+  free(lu_lowertr);
+  free(lu_uppertr);
   
   free_sparse_matrix(&mtx);
   free_sparse_matrix(&mtx2);
