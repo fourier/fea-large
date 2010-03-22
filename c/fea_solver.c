@@ -714,7 +714,7 @@ void solve( fea_task *task,
   sparse_matrix_reorder(&solver->global_mtx);
 
 #ifdef DUMP_DATA
-  if (f = fopen("row_indexes.txt","w+"))
+  if ((f = fopen("row_indexes.txt","w+")))
   {
     for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
     {
@@ -766,7 +766,7 @@ void dump_input_data( fea_task *task,
 {
   int i,j;
   FILE *f;
-  if (f = fopen("input_data.txt","w+"))
+  if ((f = fopen("input_data.txt","w+")))
   {
     fprintf(f,"nodes\n");
     for ( i = 0; i < nodes->nodes_count; ++ i)
@@ -1342,13 +1342,13 @@ void sparse_matrix_dump(sparse_matrix* self)
   FILE* f;
   int i,j;
   real *pvalue,value;
-  if (f = fopen("mywidths.txt","w+"))
+  if ((f = fopen("mywidths.txt","w+")))
   {
     for ( i = 0; i < self->rows_count; ++ i)
       fprintf(f,"%d: %d\n",i+1,self->rows[i].last_index + 1);
     fclose(f);
   }
-  if( f = fopen("rows.txt","w+"))
+  if( (f = fopen("rows.txt","w+")))
   {
     for ( i = 0; i < self->rows_count; ++ i)
     {
@@ -1362,7 +1362,7 @@ void sparse_matrix_dump(sparse_matrix* self)
     fclose(f);
   }
 
-  if (f = fopen("global_matrix_c.txt","w+"))
+  if ((f = fopen("global_matrix_c.txt","w+")))
   {
     for (i = 0; i < self->rows_count; ++ i)
     {
@@ -1575,7 +1575,7 @@ static void solver_dump_shape_gradients(fea_solver* self,
 {
   int i,j;
   FILE* f;
-  if (f = fopen("gradients.txt","w+"))
+  if ((f = fopen("gradients.txt","w+")))
   {
     fprintf(f,"\nElement %d:\n",element);
     for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
@@ -1702,7 +1702,7 @@ void solver_dump_local_stiffness(fea_solver* self,real **stiff,int el)
   char fname[50];
   int size = self->fea_params->nodes_per_element*self->task->dof;
   sprintf(fname,"elements/K%d.txt",el);
-  if (f = fopen(fname,"w+"))
+  if ((f = fopen(fname,"w+")))
   {
     for ( i = 0; i < size; ++ i)
     {
@@ -1745,7 +1745,7 @@ void dump_ctensor_as_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
   int I,J;
   int i = 0, j = 0, k = 0, l = 0;
   FILE* f;
-  if (f = fopen("ctensor.txt","w+"))
+  if ((f = fopen("ctensor.txt","w+")))
   {
     fprintf(f,"\nConstitutive matrix:\n"); 
     for (I = 0; I < 6; ++ I)
