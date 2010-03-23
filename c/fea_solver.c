@@ -1314,27 +1314,64 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
                                real *lu_lowertr,
                                real *lu_uppertr)
 {
-  int i,j,k;
+  int i,j,k,l,q;
   real sum;
   /* clear arrays before construction of the ILU decomposition */
-  memset(lu_diag,0,self->rows_count);
-  memset(lu_lowertr,0,self->triangle_nonzeros_count);
-  memset(lu_uppertr,0,self->triangle_nonzeros_count);
+  memset(lu_diag,0,sizeof(real)*self->rows_count);
+  memset(lu_lowertr,0,sizeof(real)*self->triangle_nonzeros_count);
+  memset(lu_uppertr,0,sizeof(real)*self->triangle_nonzeros_count);
 
   for (k = 0; k < self->rows_count; ++ k)
   {
-    printf("%d: ",k+1);
     for ( j = self->iptr[k]; j < self->iptr[k+1]; ++ j)
     {
-      printf("%d - ",j+1); 
       sum = 0;
       for ( i = self->iptr[k]; i < j; ++ i)
-      {
-        printf("(%d) ",i+1);
-        /* sum += lu_lowertr[i]*lu_uppertr[i]; */
-      }
-      /* printf(" = %f",sum); */
-      /* lu_lowertr[j] = (self->lower_triangle[j] - sum)/lu_diag[k]; */
+        for ( l = self->iptr[j]; l < self->iptr[j+1]; ++ l)
+        {
+          if ( self->jptr[i] == self->jptr[l] )
+            sum += lu_lowertr[i]*lu_uppertr[l];
+        }
+      lu_lowertr[j] =
+        (self->lower_triangle[j] - sum)/lu_diag[self->jptr[j]];
+    }
+
+    /*
+     * U_{kk} = A_{kk} -
+     * \sum\limits_{i=1}^{k-1} L_{ki}U_{ik}
+     */
+    sum = 0;
+    for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
+      sum += lu_lowertr[i]*lu_uppertr[i];
+    lu_diag[k] = self->diag[k] - sum;
+
+    for (j = k; j < self->rows_count; ++ j)
+    {
+      for ( q = self->iptr[j]; q < self->iptr[j+1]; ++ q)
+        if (k == self->jptr[q])
+        {
+          /*
+           * U_{kj} = A_{kj} -
+           * \sum\limits_{i=1}^{k-1}L_{ki}U_{ij}
+           */
+          sum = 0;
+          /*
+           * i = iptr[k]:iptr[k+1]-1 are coordinates of the
+           * k-th row in lower matrix array (lu_lowertr)
+           * l = iptr[j]:iptr[j+1]-1 are coordinates of the
+           * j-th column in upper matrix array (lu_uppertr)
+           */
+          for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
+            for ( l = self->iptr[j]; l < self->iptr[j+1]; ++ l)
+            {
+              /* if row and column indicies are the same */
+              if ( self->jptr[i] == self->jptr[l] )
+                sum += lu_lowertr[i]*lu_uppertr[l];
+            }
+          lu_uppertr[q] = self->upper_triangle[q] - sum;
+          printf("%.2f,U(%d,%d)=%.2f\t",sum,k,q,lu_uppertr[q]);
+          break;
+        }
     }
     printf("\n");
   }
