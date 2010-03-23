@@ -1325,10 +1325,15 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
   {
     for ( j = self->iptr[k]; j < self->iptr[k+1]; ++ j)
     {
+      /*
+       * L_{kj} = (A_{kj} - \sum\limits_{i=1}^{j-1}L_{ki}U_{ij}/U_{jj}
+       * calculate using L_{k,jptr[j]}
+       */
       sum = 0;
-      for ( i = self->iptr[k]; i < j; ++ i)
-        for ( l = self->iptr[j]; l < self->iptr[j+1]; ++ l)
+      for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
+        for ( l = self->iptr[self->jptr[j]]; l < self->iptr[self->jptr[j]+1]; ++ l)
         {
+          /* if row and column indicies are the same */
           if ( self->jptr[i] == self->jptr[l] )
             sum += lu_lowertr[i]*lu_uppertr[l];
         }
@@ -1369,13 +1374,9 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
                 sum += lu_lowertr[i]*lu_uppertr[l];
             }
           lu_uppertr[q] = self->upper_triangle[q] - sum;
-          printf("%.2f,U(%d,%d)=%.2f\t",sum,k,q,lu_uppertr[q]);
-          break;
         }
     }
-    printf("\n");
   }
-  
 }
 
 
@@ -3187,7 +3188,7 @@ BOOL do_tests()
   lu_uppertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
 
   sparse_matrix_skyline_ilu(&m,lu_diag,lu_lowertr,lu_uppertr);
-
+#ifdef DUMP_DATA
   printf("lu_diag = [");
   for (i = 0; i <  m.rows_count; ++ i)
     printf("%f ",lu_diag[i]);
@@ -3202,7 +3203,7 @@ BOOL do_tests()
   for (i = 0; i <  m.triangle_nonzeros_count; ++ i)
     printf("%f ",lu_uppertr[i]);
   printf("];\n");
-
+#endif
   
   free(lu_diag);
   free(lu_lowertr);
@@ -3211,6 +3212,5 @@ BOOL do_tests()
   free_sparse_matrix(&mtx);
   free_sparse_matrix(&mtx2);
   free_sparse_matrix_skyline(&m);
-  return FALSE;
   return result;
 }
