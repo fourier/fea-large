@@ -257,24 +257,25 @@ typedef struct indexed_array_tag {
  * Sparse matrix row storage 
  * Internal format based on CRS
  */
-typedef struct sparse_matrix_tag {
+typedef struct sp_matrix_tag {
   int rows_count;
   int cols_count;
   indexed_array* rows;
-} sparse_matrix;
+  BOOL ordered;
+} sp_matrix;
 
 
 /*
- * Sparse matrix CSLR format
+ * Sparse matrix CSLR(Skyline) format
  * used in sparse iterative solvers
  * Constructed from Sparse Matrix in assumption of the symmetric
  * matrix portrait
  */
-typedef struct sparse_matrix_skyline_tag {
+typedef struct sp_matrix_skyline_tag {
   int rows_count;
   int cols_count;
   int nonzeros;                 /* number of nonzero elements in matrix */
-  int triangle_nonzeros_count;  /* number of nonzero elements in
+  int tr_nonzeros;  /* number of nonzero elements in
                                  * upper or lower triangles */
   real *diag;                   /* rows_count elements in matrix diagonal */
   real *lower_triangle;         /* nonzero elements of the lower triangle */
@@ -283,7 +284,18 @@ typedef struct sparse_matrix_skyline_tag {
                                  * lower/upper triangles */
   int *iptr;                    /* array of row/column offsets in jptr
                                  * for lower or upper triangles */
-} sparse_matrix_skyline;
+} sp_matrix_skyline;
+
+/*
+ * ILU decomposition of the sparse matrix in Skyline (CSLR) format
+ * ILU decomposition keeps the symmetric portrait of the sparse matrix
+ */
+typedef struct sp_matrix_skyline_ilu_tag {
+  sp_matrix_skyline parent;
+  real *ilu_diag;              /* U matrix diagonal */
+  real *ilu_lowertr;           /* nonzero elements of the lower(L) matrix */
+  real *ilu_uppertr;           /* nonzero elements of the upper(U) matrix */
+} sp_matrix_skyline_ilu;
 
 /*
  * A main application structure which shall contain all
@@ -303,7 +315,7 @@ typedef struct fea_solver_tag {
                                    * shape function */
   isoform_t shape;                /* a function pointer to the shape
                                    * function */
-  sparse_matrix global_mtx;        /* global stiffness matrix */
+  sp_matrix global_mtx;        /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_solution_vct;    /* vector of global solution */
 } fea_solver;
@@ -388,7 +400,7 @@ void indexed_array_sort(indexed_array* self, int l, int r);
  * only for its structures. Matrix mtx shall be already allocated
  * bandwdith - is a start bandwidth of a matrix row
  */
-static void init_sparse_matrix(sparse_matrix* mtx,
+static void init_sp_matrix(sp_matrix* mtx,
                            int rows,
                            int cols,
                            int bandwidth);
@@ -397,48 +409,48 @@ static void init_sparse_matrix(sparse_matrix* mtx,
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sparse_matrix(sparse_matrix* mtx);
+static void free_sp_matrix(sp_matrix* mtx);
 
 /*
- * Construct CSLR sparse matrix based on sparse_matrix format
+ * Construct CSLR sparse matrix based on sp_matrix format
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
  */
-static void init_sparse_matrix_skyline(sparse_matrix_skyline* self,
-                                       sparse_matrix* mtx);
+static void init_sp_matrix_skyline(sp_matrix_skyline* self,
+                                   sp_matrix* mtx);
 /*
  * Destructor for a sparse matrix in CSLR format
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sparse_matrix_skyline(sparse_matrix_skyline* self);
+static void free_sp_matrix_skyline(sp_matrix_skyline* self);
 
 /* getters/setters for a sparse matrix */
 
 /* returns a pointer to the specific element
  * zero pointer if not found */
-static real* sparse_matrix_element(sparse_matrix* self,int i, int j);
+static real* sp_matrix_element(sp_matrix* self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
-static void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value);
+static void sp_matrix_element_add(sp_matrix* self,int i, int j, real value);
 
 /* rearrange columns of a matrix to prepare for solving SLAE */
-static void sparse_matrix_reorder(sparse_matrix* self);
+static void sp_matrix_reorder(sp_matrix* self);
 
 /*
  * Implements BLAS level 2 function SAXPY: y = A*x+b
  * All vectors shall be already allocated
-static void sparse_matrix_saxpy((sparse_matrix* self,real* b,real* x, real* y);
+static void sp_matrix_saxpy((sp_matrix* self,real* b,real* x, real* y);
  */
 
 /* Matrix-vector multiplication
  * y = A*x*/
-static void sparse_matrix_mv(sparse_matrix* self,real* x, real* y);
+static void sp_matrix_mv(sp_matrix* self,real* x, real* y);
 
 /*
  * Solve SLAE for a matrix self with right-part b
  * Store results to the vector x. It shall be already allocated
  */
-static void sparse_matrix_solve(sparse_matrix* self,real* b,real* x);
+static void sp_matrix_solve(sp_matrix* self,real* b,real* x);
 /*
  * Conjugate Grade solver
  * self - matrix
@@ -450,12 +462,12 @@ static void sparse_matrix_solve(sparse_matrix* self,real* b,real* x);
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-static void sparse_matrix_solve_cg(sparse_matrix* self,
-                                   real* b,
-                                   real* x0,
-                                   int* max_iter,
-                                   real* tolerance,
-                                   real* x);
+static void sp_matrix_solve_cg(sp_matrix* self,
+                               real* b,
+                               real* x0,
+                               int* max_iter,
+                               real* tolerance,
+                               real* x);
 
 /*
  * Preconditioned Conjugate Grade solver
@@ -469,12 +481,12 @@ static void sparse_matrix_solve_cg(sparse_matrix* self,
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-static void sparse_matrix_solve_pcg(sparse_matrix* self,
-                                   real* b,
-                                   real* x0,
-                                   int* max_iter,
-                                   real* tolerance,
-                                   real* x);
+static void sp_matrix_solve_pcg(sp_matrix* self,
+                                real* b,
+                                real* x0,
+                                int* max_iter,
+                                real* tolerance,
+                                real* x);
 
 
 /*
@@ -483,15 +495,49 @@ static void sparse_matrix_solve_pcg(sparse_matrix* self,
  * lu_lowertr - lower triangle of the ILU decomposition
  * lu_uppertr - upper triangle of the ILU decomposition
  */
-static void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
-                                      real *lu_diag,
-                                      real *lu_lowertr,
-                                      real *lu_uppertr);
+static void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self,
+                                            sp_matrix_skyline* parent);
+
+/* Free the sparse matrix skyline & ilu decomposition structure */
+static void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self);
+
+/*
+ * by given L,U - ILU decomposition of the matrix A
+ * calculates L*x = y
+ */
+static void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu* self,
+                                           real* x,
+                                           real* y);
+/*
+ * by given L,U - ILU decomposition of the matrix A
+ * calculates U*x = y
+ */
+static void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu* self,
+                                           real* x,
+                                           real* y);
+
+/*
+ * by given L,U - ILU decomposition of the matrix A
+ * Solves SLAE L*x = b
+ * Warning! Side-Effect: modifies b
+ */
+static void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu* self,
+                                              real* b,
+                                              real* x);
+
+/*
+ * by given L,U - ILU decomposition of the matrix A
+ * Solves SLAE U*x = b
+ * Warning! Side-Effect: modifies b 
+ */
+static void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu* self,
+                                              real* b,
+                                              real* x);
 
 
 #ifdef DUMP_DATA
-static void sparse_matrix_dump(sparse_matrix* self);
-static void sparse_matrix_skyline_dump(sparse_matrix_skyline* self);
+static void sp_matrix_dump(sp_matrix* self);
+static void sp_matrix_skyline_dump(sp_matrix_skyline* self);
 #endif
 
 
@@ -526,6 +572,10 @@ int do_main(char* filename);
  * returns FALSE if fail
  */
 BOOL do_tests();
+/* test matrix/vector SLAE solverf */
+BOOL test_solver();
+/* test ILU decomposition */
+BOOL test_ilu();
 
 /*
  * Solver function which shall be called
@@ -710,10 +760,11 @@ void solve( fea_task *task,
    * in the global stiffness matrix */
   for ( i = 0; i < solver->elements->elements_count; ++ i)
     solver_local_stiffness(solver,i);
-  /* sort column indicies in global matrix */
-  sparse_matrix_reorder(&solver->global_mtx);
 
 #ifdef DUMP_DATA
+  /* sort column indicies in global matrix */
+  sp_matrix_reorder(&solver->global_mtx);
+
   if ((f = fopen("row_indexes.txt","w+")))
   {
     for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
@@ -732,14 +783,14 @@ void solve( fea_task *task,
   solver_apply_prescribed_bc(solver);
 
 #ifdef DUMP_DATA
-  sparse_matrix_dump(&solver->global_mtx);
+  sp_matrix_dump(&solver->global_mtx);
 #endif
   /* solve global equation system */
-  sparse_matrix_solve(&solver->global_mtx,
-                   solver->global_forces_vct,
-                   solver->global_solution_vct);
-  for (i = 0; i < solver->global_mtx.rows_count; ++ i)
-    printf("%f\n",solver->global_solution_vct[i]);
+  sp_matrix_solve(&solver->global_mtx,
+                  solver->global_forces_vct,
+                  solver->global_solution_vct);
+  /* for (i = 0; i < solver->global_mtx.rows_count; ++ i) */
+  /*   printf("%f\n",solver->global_solution_vct[i]); */
   
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -809,7 +860,7 @@ void application_done(void)
   
 }
 
-void init_sparse_matrix(sparse_matrix* mtx,
+void init_sp_matrix(sp_matrix* mtx,
                     int rows,
                     int cols,
                     int bandwidth)
@@ -819,6 +870,7 @@ void init_sparse_matrix(sparse_matrix* mtx,
   {
     mtx->rows_count = rows;
     mtx->cols_count = cols;
+    mtx->ordered = FALSE;
     mtx->rows = (indexed_array*)malloc(sizeof(indexed_array)*rows);
     /* create rows with fixed bandwidth */
     for (i = 0; i < rows; ++ i)
@@ -834,7 +886,7 @@ void init_sparse_matrix(sparse_matrix* mtx,
 }
 
 
-void free_sparse_matrix(sparse_matrix* mtx)
+void free_sp_matrix(sp_matrix* mtx)
 {
   int i;
   if (mtx)
@@ -851,15 +903,18 @@ void free_sparse_matrix(sparse_matrix* mtx)
   }
 }
 
-void init_sparse_matrix_skyline(sparse_matrix_skyline* self,sparse_matrix* mtx)
+void init_sp_matrix_skyline(sp_matrix_skyline* self,sp_matrix* mtx)
 {
   /*
-   * Construct CSLR matrix from the sparse_matrix
+   * Construct CSLR matrix from the sp_matrix
    * with symmetric portrait
    */
   int i,j,k,iptr,l_count,u_count,column;
   real* pvalue = 0;
 
+  /* assert what mtx is already reordered */
+  assert(mtx->ordered == TRUE);
+  
   self->rows_count = mtx->rows_count;
   self->cols_count = mtx->cols_count;
   /*
@@ -883,7 +938,7 @@ void init_sparse_matrix_skyline(sparse_matrix_skyline* self,sparse_matrix* mtx)
    * is the same as number of lower triangle nonzero elements
    */
   assert(l_count == u_count);
-  self->triangle_nonzeros_count = l_count;
+  self->tr_nonzeros = l_count;
   
   /* allocate memory for arrays */
   self->diag = (real*)malloc(sizeof(real)*mtx->rows_count);
@@ -895,7 +950,7 @@ void init_sparse_matrix_skyline(sparse_matrix_skyline* self,sparse_matrix* mtx)
   /* fill diagonal */
   for (i = 0; i < mtx->rows_count; ++ i)
   {
-    pvalue = sparse_matrix_element(mtx,i,i);
+    pvalue = sp_matrix_element(mtx,i,i);
     self->diag[i] = pvalue ? *pvalue : 0;
   }
   /* now fill arrays with proper values */
@@ -932,17 +987,17 @@ void init_sparse_matrix_skyline(sparse_matrix_skyline* self,sparse_matrix* mtx)
     self->iptr[i] = iptr == -1 ? l_count : iptr;
   }
   /* finalize iptr array */
-  self->iptr[i] = self->triangle_nonzeros_count;
+  self->iptr[i] = self->tr_nonzeros;
 }
 
-void free_sparse_matrix_skyline(sparse_matrix_skyline* self)
+void free_sp_matrix_skyline(sp_matrix_skyline* self)
 {
   if (self)
   {
     self->rows_count = 0;
     self->cols_count = 0;
     self->nonzeros = 0;
-    self->triangle_nonzeros_count = 0;
+    self->tr_nonzeros = 0;
     free(self->diag);
     free(self->lower_triangle);
     free(self->upper_triangle);
@@ -952,7 +1007,7 @@ void free_sparse_matrix_skyline(sparse_matrix_skyline* self)
 }
 
 
-real* sparse_matrix_element(sparse_matrix* self,int i, int j)
+real* sp_matrix_element(sp_matrix* self,int i, int j)
 {
   int index;
   /* check for matrix and if i,j are proper indicies */
@@ -968,7 +1023,7 @@ real* sparse_matrix_element(sparse_matrix* self,int i, int j)
   return (real*)0;
 }
 
-void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value)
+void sp_matrix_element_add(sp_matrix* self,int i, int j, real value)
 {
   int index,new_width;
   int* indexes = (int*)0;
@@ -1002,6 +1057,7 @@ void sparse_matrix_element_add(sparse_matrix* self,int i, int j, real value)
       assert(values);
       self->rows[i].values = values;
       self->rows[i].width = new_width;
+      self->ordered = FALSE;
     }
     /* add an element to the row */
     self->rows[i].last_index++;
@@ -1065,15 +1121,16 @@ void indexed_array_sort(indexed_array* self, int l, int r)
 }
 
 
-void sparse_matrix_reorder(sparse_matrix* self)
+void sp_matrix_reorder(sp_matrix* self)
 {
   int i;
   
   for (i = 0; i < self->rows_count; ++ i)
     indexed_array_sort(&self->rows[i],0,self->rows[i].last_index);
+  self->ordered = TRUE;
 }
 
-void sparse_matrix_mv(sparse_matrix* self,real* x, real* y)
+void sp_matrix_mv(sp_matrix* self,real* x, real* y)
 {
   int i,j;
   for ( i = 0; i < self->rows_count; ++ i)
@@ -1084,14 +1141,17 @@ void sparse_matrix_mv(sparse_matrix* self,real* x, real* y)
   }
 }
 
-void sparse_matrix_solve(sparse_matrix* self,real* b,real* x)
+void sp_matrix_solve(sp_matrix* self,real* b,real* x)
 {
   real tolerance = 1e-15;
   int max_iter = 20000;
-  sparse_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x);
+  /* reorder columns for to prepare to solve SLAE */
+  sp_matrix_reorder(self);
+  sp_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x);
+  printf("iter = %d, tolerance = %e\n",max_iter,tolerance);
 }
 
-void sparse_matrix_solve_cg(sparse_matrix* self,
+void sp_matrix_solve_cg(sp_matrix* self,
                                 real* b,
                                 real* x0,
                                 int* max_iter,
@@ -1111,7 +1171,7 @@ void sparse_matrix_solve_cg(sparse_matrix* self,
   real residn = 0;
   int size = sizeof(real)*self->rows_count;
   int msize = self->rows_count;
-  real max_iterations = max_iter ? *max_iter : MAX_ITER;
+  int max_iterations = max_iter ? *max_iter : MAX_ITER;
   real tol = tolerance ? *tolerance : TOLERANCE;
   real* r;              /* residual */
   real* p;              /* search direction */
@@ -1131,7 +1191,7 @@ void sparse_matrix_solve_cg(sparse_matrix* self,
     x[i] = x0[i];
 
   /* r_0 = b - A*x_0 */
-  sparse_matrix_mv(self,b,r);
+  sp_matrix_mv(self,b,r);
   for ( i = 0; i < msize; ++ i)
     r[i] = b[i] - r[i];
 
@@ -1142,7 +1202,7 @@ void sparse_matrix_solve_cg(sparse_matrix* self,
   for ( j = 0; j < max_iterations; j ++ )
   {
     /* temp = A*p_j */
-    sparse_matrix_mv(self,p,temp);
+    sp_matrix_mv(self,p,temp);
     /* compute (r_j,r_j) and (A*p_j,p_j) */
     a1 = 0; a2 = 0;
     for (i = 0; i < msize; ++ i)
@@ -1192,7 +1252,7 @@ void sparse_matrix_solve_cg(sparse_matrix* self,
   free(temp);
 }
 
-void sparse_matrix_solve_pcg(sparse_matrix* self,
+void sp_matrix_solve_pcg(sp_matrix* self,
                              real* b,
                              real* x0,
                              int* max_iter,
@@ -1205,64 +1265,82 @@ void sparse_matrix_solve_pcg(sparse_matrix* self,
   real residn = 0;
   int size = sizeof(real)*self->rows_count;
   int msize = self->rows_count;
-  real max_iterations = max_iter ? *max_iter : MAX_ITER;
+  int max_iterations = max_iter ? *max_iter : MAX_ITER;
   real tol = tolerance ? *tolerance : TOLERANCE;
   
   /* skyline form of the initial matrix */
-  sparse_matrix_skyline A;
-  real *lu_diag;
-  real *lu_lowertr;
-  real *lu_uppertr;
+  sp_matrix_skyline A;
+  sp_matrix_skyline_ilu ILU;    /* preconditioner */
 
   real* r;              /* residual */
+  real* r1;             /* backup of the residual */
   real* p;              /* search direction */
+  real* z;              /* z = M^{-1}*r */
   real* temp;
   
   /* allocate memory for vectors */
   r = malloc(size);
+  r1 = malloc(size);
   p = malloc(size);
+  z = malloc(size);
   temp = malloc(size);
-  /* initialize skyline matrix for ILU decomposition */
-  init_sparse_matrix_skyline(&A,self);
-  
-  lu_diag = malloc(sizeof(real)*msize);
-  lu_lowertr = malloc(sizeof(real)*A.triangle_nonzeros_count);
-  lu_uppertr = malloc(sizeof(real)*A.triangle_nonzeros_count);
 
+  /* assuming self is already reordered */
+  /* initialize skyline matrix for ILU decomposition */
+  init_sp_matrix_skyline(&A,self);
+  /*
+   * create ILU decomposition of the sparse matrix in skyline format
+   * taking ownership of the skyline A matrix
+   */
+  init_copy_sp_matrix_skyline_ilu(&ILU,&A);
   
   /* clear vectors */
   memset(r,0,size);
+  memset(r1,0,size);
   memset(p,0,size);
+  memset(z,0,size);
   memset(temp,0,size);
 
-  /* sparse_matrix_skyline_ilu(&A,lu_diag,lu_lowertr,lu_uppertr); */
-  
   /* x = x_0 */
   for ( i = 0; i < msize; ++ i)
     x[i] = x0[i];
 
   /* r_0 = b - A*x_0 */
-  sparse_matrix_mv(self,b,r);
+  sp_matrix_mv(self,b,r);
   for ( i = 0; i < msize; ++ i)
     r[i] = b[i] - r[i];
-
-  /* p_0 = r_0 */
-  memcpy(p,r,size);
+  
+  /* backup residual */
+  memcpy(r1,r,size);
+  /* z_0 = M^{-1}*r_0 */
+  /*
+   * to solve system L*U*x = b
+   * y = U*x, => L*y = b
+   * U*x = y => x
+   */ 
+  sp_matrix_skyline_ilu_lower_solve(&ILU,r1,temp); /* temp = L^{-1}*r */
+  /* r now corrupted, temp contains solution */
+  sp_matrix_skyline_ilu_upper_solve(&ILU,temp,z); /* z = U^{-1}*temp */
+  /* temp now corrupted, z contains solution*/
+  
+  /* p_0 = z_0 */
+  memcpy(p,z,size);
   
   /* CG loop */
   for ( j = 0; j < max_iterations; j ++ )
   {
     /* temp = A*p_j */
-    sparse_matrix_mv(self,p,temp);
-    /* compute (r_j,r_j) and (A*p_j,p_j) */
+    memset(temp,0,size);
+    sp_matrix_mv(self,p,temp);
+    /* compute (r_j,z_j) and (A*p_j,p_j) */
     a1 = 0; a2 = 0;
     for (i = 0; i < msize; ++ i)
     {
-      a1 += r[i]*r[i]; /* (r_j,r_j) */
+      a1 += r[i]*z[i]; /* (r_j,z_j) */
       a2 += p[i]*temp[i];      /* (A*p_j,p_j) */
     }
 
-    /*            (r_j,r_j) 
+    /*            (r_j,z_j) 
      * alpha_j = -----------
      *           (A*p_j,p_j)
      */                     
@@ -1283,62 +1361,79 @@ void sparse_matrix_solve_pcg(sparse_matrix* self,
     if (residn < tol )
       break;
 
-    /* compute (r_{j+1},r_{j+1}) */
+    /* z_{j+1} = M^{-1}*r_{j+1} */
+    memcpy(r1,r,size);
+    memset(temp,0,size);
+    sp_matrix_skyline_ilu_lower_solve(&ILU,r1,temp); /* temp = L^{-1}*r */
+    sp_matrix_skyline_ilu_upper_solve(&ILU,temp,z); /* z = U^{-1}*temp */
+
+    
+    /* compute (r_{j+1},z_{j+1}) */
     a2 = 0;
     for (i = 0; i < msize; ++ i)
-      a2 += r[i]*r[i];
+      a2 += r[i]*z[i];
 
-    /* b_j = (r_{j+1},r_{j+1})/(r_j,r_j) */
+    /* b_j = (r_{j+1},z_{j+1})/(r_j,z_j) */
     beta = a2/a1;
     
     /* d_{j+1} = r_{j+1} + beta_j*d_j */
     for (i = 0; i < msize; ++ i)
-      p[i] = r[i] + beta*p[i];
+      p[i] = z[i] + beta*p[i];
   }
   *max_iter = j;
   *tolerance = residn;
-
-  free(lu_diag);
-  free(lu_lowertr);
-  free(lu_uppertr);
   
+  /* free vectors */
   free(r);
+  free(r1);
+  free(z);
   free(p);
   free(temp);
-
-  free_sparse_matrix_skyline(&A);
+  /*
+   * since init_copy_sp_matrix_skyline_ilu takes the ownership
+   * of the A matrix we will need to free only ILU decomposition
+   */
+  free_sp_matrix_skyline_ilu(&ILU);
 }
 
-void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
-                               real *lu_diag,
-                               real *lu_lowertr,
-                               real *lu_uppertr)
+void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self,
+                                     sp_matrix_skyline* parent)
 {
   int i,j,k,l,q;
   real sum;
+  
+  /* copy parent member-wise */
+  self->parent = *parent;
+  /* allocate memory for ILU decomposition arrays */
+  self->ilu_diag = (real*)malloc(sizeof(real)*parent->rows_count);
+  self->ilu_lowertr = (real*)malloc(sizeof(real)*parent->tr_nonzeros);
+  self->ilu_uppertr = (real*)malloc(sizeof(real)*parent->tr_nonzeros);
   /* clear arrays before construction of the ILU decomposition */
-  memset(lu_diag,0,sizeof(real)*self->rows_count);
-  memset(lu_lowertr,0,sizeof(real)*self->triangle_nonzeros_count);
-  memset(lu_uppertr,0,sizeof(real)*self->triangle_nonzeros_count);
+  memset(self->ilu_diag,0,sizeof(real)*parent->rows_count);
+  memset(self->ilu_lowertr,0,sizeof(real)*parent->tr_nonzeros);
+  memset(self->ilu_uppertr,0,sizeof(real)*parent->tr_nonzeros);
 
-  for (k = 0; k < self->rows_count; ++ k)
+  for (k = 0; k < parent->rows_count; ++ k)
   {
-    for ( j = self->iptr[k]; j < self->iptr[k+1]; ++ j)
+    for ( j = parent->iptr[k]; j < parent->iptr[k+1]; ++ j)
     {
       /*
        * L_{kj} = (A_{kj} - \sum\limits_{i=1}^{j-1}L_{ki}U_{ij}/U_{jj}
        * calculate using L_{k,jptr[j]}
        */
       sum = 0;
-      for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
-        for ( l = self->iptr[self->jptr[j]]; l < self->iptr[self->jptr[j]+1]; ++ l)
+      q = parent->jptr[j];        /* column index */
+      for ( i = parent->iptr[k]; i < parent->iptr[k+1]; ++ i)
+      {
+        for ( l = parent->iptr[q]; l < parent->iptr[q+1]; ++ l)
         {
           /* if row and column indicies are the same */
-          if ( self->jptr[i] == self->jptr[l] )
-            sum += lu_lowertr[i]*lu_uppertr[l];
+          if ( parent->jptr[i] == parent->jptr[l] )
+            sum += self->ilu_lowertr[i]*self->ilu_uppertr[l];
         }
-      lu_lowertr[j] =
-        (self->lower_triangle[j] - sum)/lu_diag[self->jptr[j]];
+      }
+      self->ilu_lowertr[j] =
+        (parent->lower_triangle[j] - sum)/self->ilu_diag[q];
     }
 
     /*
@@ -1346,14 +1441,14 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
      * \sum\limits_{i=1}^{k-1} L_{ki}U_{ik}
      */
     sum = 0;
-    for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
-      sum += lu_lowertr[i]*lu_uppertr[i];
-    lu_diag[k] = self->diag[k] - sum;
+    for ( i = parent->iptr[k]; i < parent->iptr[k+1]; ++ i)
+      sum += self->ilu_lowertr[i]*self->ilu_uppertr[i];
+    self->ilu_diag[k] = parent->diag[k] - sum;
 
-    for (j = k; j < self->rows_count; ++ j)
+    for (j = k; j < parent->rows_count; ++ j)
     {
-      for ( q = self->iptr[j]; q < self->iptr[j+1]; ++ q)
-        if (k == self->jptr[q])
+      for ( q = parent->iptr[j]; q < parent->iptr[j+1]; ++ q)
+        if (k == parent->jptr[q])
         {
           /*
            * U_{kj} = A_{kj} -
@@ -1362,19 +1457,92 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
           sum = 0;
           /*
            * i = iptr[k]:iptr[k+1]-1 are coordinates of the
-           * k-th row in lower matrix array (lu_lowertr)
+           * k-th row in lower matrix array (self->ilu_lowertr)
            * l = iptr[j]:iptr[j+1]-1 are coordinates of the
-           * j-th column in upper matrix array (lu_uppertr)
+           * j-th column in upper matrix array (self->ilu_uppertr)
            */
-          for ( i = self->iptr[k]; i < self->iptr[k+1]; ++ i)
-            for ( l = self->iptr[j]; l < self->iptr[j+1]; ++ l)
+          for ( i = parent->iptr[k]; i < parent->iptr[k+1]; ++ i)
+            for ( l = parent->iptr[j]; l < parent->iptr[j+1]; ++ l)
             {
               /* if row and column indicies are the same */
-              if ( self->jptr[i] == self->jptr[l] )
-                sum += lu_lowertr[i]*lu_uppertr[l];
+              if ( parent->jptr[i] == parent->jptr[l] )
+                sum += self->ilu_lowertr[i]*self->ilu_uppertr[l];
             }
-          lu_uppertr[q] = self->upper_triangle[q] - sum;
+          self->ilu_uppertr[q] = parent->upper_triangle[q] - sum;
         }
+    }
+  }
+}
+
+void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self)
+{
+  free(self->ilu_diag);
+  free(self->ilu_lowertr);
+  free(self->ilu_uppertr);
+  free_sp_matrix_skyline(&self->parent);
+}
+
+
+void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu* self,
+                                    real* x,
+                                    real* y)
+{
+  int i,j;
+  memset(y,0,sizeof(real)*self->parent.rows_count);
+  for (i = 0; i < self->parent.rows_count; ++ i)
+  {
+    y[i] = x[i];
+    for (j = self->parent.iptr[i]; j < self->parent.iptr[i+1]; ++ j)
+      y[i] += x[self->parent.jptr[j]]*self->ilu_lowertr[j];
+  }
+}
+
+void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu* self,
+                                    real* x,
+                                    real* y)
+{
+  int i,j;
+  memset(y,0,sizeof(real)*self->parent.rows_count);
+
+  for (i = 0; i < self->parent.rows_count; ++ i)
+    y[i] = x[i]*self->ilu_diag[i];
+  for (i = 0; i < self->parent.rows_count; ++ i)
+  {
+    for ( j = self->parent.iptr[i]; j < self->parent.iptr[i+1]; ++j )
+      y[self->parent.jptr[j]] += x[i]*self->ilu_uppertr[j];
+  }
+}
+
+void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu* self,
+                                       real* b,
+                                       real* x)
+{
+  int i,j;
+  memset(x,0,sizeof(real)*self->parent.rows_count);
+  
+  for ( i = 0; i < self->parent.rows_count; ++ i)
+  {
+    for (j = self->parent.iptr[i]; j < self->parent.iptr[i+1]; ++ j)
+    {
+      b[i] -= x[self->parent.jptr[j]]*self->ilu_lowertr[j];
+    }
+    x[i] = b[i];
+  }
+}
+
+void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu* self,
+                                       real* b,
+                                       real* x)
+{
+  int i,j;
+  memset(x,0,sizeof(real)*self->parent.rows_count);
+
+  for ( i = self->parent.rows_count-1; i >= 0; -- i)
+  {
+    x[i] = b[i]/self->ilu_diag[i];
+    for (j = self->parent.iptr[i]; j < self->parent.iptr[i+1]; ++ j)
+    {
+      b[self->parent.jptr[j]] -= x[i]*self->ilu_uppertr[j];
     }
   }
 }
@@ -1382,7 +1550,7 @@ void sparse_matrix_skyline_ilu(sparse_matrix_skyline* self,
 
 
 #ifdef DUMP_DATA
-void sparse_matrix_dump(sparse_matrix* self)
+void sp_matrix_dump(sp_matrix* self)
 {
   FILE* f;
   int i,j;
@@ -1413,7 +1581,7 @@ void sparse_matrix_dump(sparse_matrix* self)
     {
       for (j = 0; j < self->rows_count; ++ j)
       {
-        pvalue = sparse_matrix_element(self,i,j);
+        pvalue = sp_matrix_element(self,i,j);
         value = pvalue ? *pvalue : 0;
         fprintf(f,"%.5f ",value);
       }
@@ -1425,7 +1593,7 @@ void sparse_matrix_dump(sparse_matrix* self)
 
 
 
-void sparse_matrix_skyline_dump(sparse_matrix_skyline* self)
+void sp_matrix_skyline_dump(sp_matrix_skyline* self)
 {
   int i;
   
@@ -1435,22 +1603,22 @@ void sparse_matrix_skyline_dump(sparse_matrix_skyline* self)
   printf("]\n");
 
   printf("altr = [");
-  for ( i = 0; i < self->triangle_nonzeros_count; ++ i )
+  for ( i = 0; i < self->tr_nonzeros; ++ i )
     printf("%.1f ",self->lower_triangle[i]);
   printf("]\n");
 
   printf("autr = [");
-  for ( i = 0; i < self->triangle_nonzeros_count; ++ i )
+  for ( i = 0; i < self->tr_nonzeros; ++ i )
     printf("%.1f ",self->upper_triangle[i]);
   printf("]\n");
   
   printf("jptr = [");
-  for ( i = 0; i < self->triangle_nonzeros_count; ++ i )
+  for ( i = 0; i < self->tr_nonzeros; ++ i )
     printf("%d ",self->jptr[i]+1);
   printf("]\n");
 
   printf("iptr = [");
-  for ( i = 0; i < self->triangle_nonzeros_count-1; ++ i )
+  for ( i = 0; i < self->tr_nonzeros-1; ++ i )
     printf("%d ",self->iptr[i]+1);
   printf("]\n");
 }
@@ -1483,7 +1651,7 @@ fea_solver* new_fea_solver(fea_task *task,
   /* approximate bandwidth of a global matrix
    * usually sqrt(msize)*2*/
   bandwidth = (int)sqrt(msize)*2;
-  init_sparse_matrix(&solver->global_mtx,msize,msize,bandwidth);
+  init_sp_matrix(&solver->global_mtx,msize,msize,bandwidth);
   /* allocate memory for global forces and solution vectors */
   solver->global_forces_vct = (real*)malloc(sizeof(real)*msize);
   solver->global_solution_vct = (real*)malloc(sizeof(real)*msize);
@@ -1502,7 +1670,7 @@ void free_fea_solver(fea_solver* solver)
   free_nodes_array(solver->nodes);
   free_elements_array(solver->elements);
   free_prescribed_boundary_array(solver->presc_boundary);
-  free_sparse_matrix(&solver->global_mtx);
+  free_sp_matrix(&solver->global_mtx);
   free(solver->global_forces_vct);
   free(solver->global_solution_vct);
   free(solver);
@@ -1785,7 +1953,7 @@ void matrix_tensor_mapping(int I, int* i, int* j)
   }
 }
 
-void dump_ctensor_as_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+void dump_ctensor_asp_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
   int I,J;
   int i = 0, j = 0, k = 0, l = 0;
@@ -1841,7 +2009,7 @@ void solver_local_stiffness(fea_solver* self,int element)
   solver_ctensor(self,graddef,ctens);
   
 #ifdef DUMP_DATA  
-  dump_ctensor_as_matrix(ctens);
+  dump_ctensor_asp_matrix(ctens);
 #endif
   
   dof = self->task->dof;
@@ -1885,7 +2053,7 @@ void solver_local_stiffness(fea_solver* self,int element)
               /* finally distribute to the global matrix */
               globalI = self->elements->elements[element][a]*dof + i;
               globalJ = self->elements->elements[element][b]*dof + j;
-              sparse_matrix_element_add(&self->global_mtx,
+              sp_matrix_element_add(&self->global_mtx,
                                      globalI,
                                      globalJ,
                                      sum);
@@ -1977,7 +2145,7 @@ void solver_apply_single_bc(fea_solver* self, int index, real presc)
   real *pvalue,*pvalue1,value;
   int size = self->global_mtx.rows_count;
   int j;
-  pvalue = sparse_matrix_element(&self->global_mtx,index,index);
+  pvalue = sp_matrix_element(&self->global_mtx,index,index);
   /* global matrix always shall have
    * nonzero diagonal elements */
   assert(pvalue);
@@ -1986,14 +2154,14 @@ void solver_apply_single_bc(fea_solver* self, int index, real presc)
   
   for (j = 0; j < size; ++ j)
   {
-    pvalue = sparse_matrix_element(&self->global_mtx,j,index);
+    pvalue = sp_matrix_element(&self->global_mtx,j,index);
     if (pvalue)
     {
       self->global_forces_vct[j] = self->global_forces_vct[j] -
         *pvalue*presc;
       *pvalue = 0;
     }
-    pvalue = sparse_matrix_element(&self->global_mtx,index,j);
+    pvalue = sp_matrix_element(&self->global_mtx,index,j);
     if (pvalue)
       *pvalue = 0;
   }
@@ -2008,7 +2176,7 @@ void solver_apply_single_bc2(fea_solver* self, int index, real presc)
   real *pvalue,new_value;
   real Alpha = 1e8;
 
-  pvalue = sparse_matrix_element(&self->global_mtx,index,index);
+  pvalue = sp_matrix_element(&self->global_mtx,index,index);
   assert(pvalue);             /* global matrix always shall have
                                * nonzero diagonal elements */
   new_value = *pvalue*Alpha;
@@ -3112,19 +3280,12 @@ BOOL initial_data_load(char *filename,
 
 
 
-
-BOOL do_tests()
+BOOL test_solver()
 {
   BOOL result = TRUE;
-  sparse_matrix mtx,mtx2;
+  sp_matrix mtx;
   real v[3],x[3];
-  sparse_matrix_skyline m;
-  real *lu_diag;
-  real *lu_lowertr;
-  real *lu_uppertr;
-  int i;
-  
-  /* 1st test, matrix solver  */
+  /* matrix solver test  */
   
   /*
    * | 1 0 -2 |   | 1 |   |-5 |
@@ -3136,24 +3297,67 @@ BOOL do_tests()
   v[0] = -5;
   v[1] = 2;
   v[2] = 13;
-  init_sparse_matrix(&mtx,3,3,2);
-  sparse_matrix_element_add(&mtx,0,2,-2);
-  sparse_matrix_element_add(&mtx,0,0,1);
+  init_sp_matrix(&mtx,3,3,2);
+  sp_matrix_element_add(&mtx,0,2,-2);
+  sp_matrix_element_add(&mtx,0,0,1);
 
-  sparse_matrix_element_add(&mtx,1,1,1);
+  sp_matrix_element_add(&mtx,1,1,1);
   
-  sparse_matrix_element_add(&mtx,2,2,5);
-  sparse_matrix_element_add(&mtx,2,0,-2);
+  sp_matrix_element_add(&mtx,2,2,5);
+  sp_matrix_element_add(&mtx,2,0,-2);
 
 
-  sparse_matrix_reorder(&mtx);
+  sp_matrix_reorder(&mtx);
 
-  sparse_matrix_solve(&mtx,v,x);
+  sp_matrix_solve(&mtx,v,x);
   result = !( fabs(x[0]-1) > TOLERANCE ||
               fabs(x[1]-2) > TOLERANCE ||
               fabs(x[2]-3) > TOLERANCE);
 
+  free_sp_matrix(&mtx);
+  return result;
+}
 
+BOOL test_ilu()
+{
+  BOOL result = TRUE;
+  sp_matrix mtx;
+  sp_matrix_skyline m;
+  sp_matrix_skyline_ilu ILU;
+  real x_exact[] = {1,2,3,0,3,2,1};
+  real x[7];
+  real b[7];
+  int i;
+  /* test data for ILU decomposition test */
+  real lu_diag_expected[] = {9.000000,
+                             11.000000,
+                             9.818182,
+                             7.888889,
+                             11.823161,
+                             8.000000,
+                             7.205303};
+  real lu_lowertr_expected[] = {0.090909,
+                                0.222222,
+                                0.090909,
+                                0.185185,
+                                0.111111,
+                                0.084507,
+                                0.222222,
+                                0.181818,
+                                0.234944};
+  real lu_uppertr_expected[] = {2.000000,
+                                3.000000,
+                                1.000000,
+                                1.909091,
+                                1.000000,
+                                0.777778,
+                                1.000000,
+                                2.000000,
+                                0.888889};
+
+  memset(b,0,sizeof(b));
+  memset(x,0,sizeof(x));
+  
   /* Sparse matrix from Balandin
    * 9  0  0  3  1  0  1
    * 0  11 2  1  0  0  2
@@ -3162,55 +3366,76 @@ BOOL do_tests()
    * 1  0  0  1  12 0  1
    * 0  0  0  0  0  8  0
    * 2  2  0  0  3  0  8
+   *
+   * Test for
+   * 1) skyline format
+   * 2) ILU decomposition
+   * 3) LU - solvers for ILU decomposition
    */
-   
-  init_sparse_matrix(&mtx2,7,7,5);
-#define MTX(m,i,j,v) sparse_matrix_element_add((m),(i),(j),(v));
-  MTX(&mtx2,0,0,9);MTX(&mtx2,0,3,3);MTX(&mtx2,0,4,1);MTX(&mtx2,0,6,1);
-  MTX(&mtx2,1,1,11);MTX(&mtx2,1,2,2);MTX(&mtx2,1,3,1);MTX(&mtx2,1,6,2);
-  MTX(&mtx2,2,1,1);MTX(&mtx2,2,2,10);MTX(&mtx2,2,3,2);
-  MTX(&mtx2,3,0,2);MTX(&mtx2,3,1,1);MTX(&mtx2,3,2,2);MTX(&mtx2,3,3,9);MTX(&mtx2,3,4,1);
-  MTX(&mtx2,4,0,1);MTX(&mtx2,4,3,1);MTX(&mtx2,4,4,12);MTX(&mtx2,4,6,1);
-  MTX(&mtx2,5,5,8);
-  MTX(&mtx2,6,0,2);MTX(&mtx2,6,1,2);MTX(&mtx2,6,4,3);MTX(&mtx2,6,6,8);
+
+  init_sp_matrix(&mtx,7,7,5);
+#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
+  MTX(&mtx,0,0,9);MTX(&mtx,0,3,3);MTX(&mtx,0,4,1);MTX(&mtx,0,6,1);
+  MTX(&mtx,1,1,11);MTX(&mtx,1,2,2);MTX(&mtx,1,3,1);MTX(&mtx,1,6,2);
+  MTX(&mtx,2,1,1);MTX(&mtx,2,2,10);MTX(&mtx,2,3,2);
+  MTX(&mtx,3,0,2);MTX(&mtx,3,1,1);MTX(&mtx,3,2,2);MTX(&mtx,3,3,9);
+  MTX(&mtx,3,4,1);
+  MTX(&mtx,4,0,1);MTX(&mtx,4,3,1);MTX(&mtx,4,4,12);MTX(&mtx,4,6,1);
+  MTX(&mtx,5,5,8);
+  MTX(&mtx,6,0,2);MTX(&mtx,6,1,2);MTX(&mtx,6,4,3);MTX(&mtx,6,6,8);
 #undef MTX
 
-  sparse_matrix_reorder(&mtx2);
-  
-  init_sparse_matrix_skyline(&m,&mtx2);
+  sp_matrix_reorder(&mtx);
+  init_sp_matrix_skyline(&m,&mtx);
+  init_copy_sp_matrix_skyline_ilu(&ILU,&m);
 
-#ifdef DUMP_DATA
-  sparse_matrix_skyline_dump(&m);
-#endif
-
-  lu_diag = malloc(sizeof(real)*m.rows_count);
-  lu_lowertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
-  lu_uppertr = malloc(sizeof(real)*m.triangle_nonzeros_count);
-
-  sparse_matrix_skyline_ilu(&m,lu_diag,lu_lowertr,lu_uppertr);
-#ifdef DUMP_DATA
-  printf("lu_diag = [");
   for (i = 0; i <  m.rows_count; ++ i)
-    printf("%f ",lu_diag[i]);
-  printf("];\n");
+    result &= fabs(ILU.ilu_diag[i] - lu_diag_expected[i]) < 1e-5;
   
-  printf("lu_lowertr = [");
-  for (i = 0; i <  m.triangle_nonzeros_count; ++ i)
-    printf("%f ",lu_lowertr[i]);
-  printf("];\n");
+  for (i = 0; i <  m.tr_nonzeros; ++ i)
+    result &= fabs(ILU.ilu_lowertr[i] - lu_lowertr_expected[i]) < 1e-5;
+
+  for (i = 0; i <  m.tr_nonzeros; ++ i)
+    result &= fabs(ILU.ilu_uppertr[i] - lu_uppertr_expected[i]) < 1e-5;
+
+  /*
+   * test for solving Lx=b
+   */
+
+  /* prepare a right-part vector */
+  sp_matrix_skyline_ilu_lower_mv(&ILU,x_exact,b);
   
-  printf("lu_uppertr = [");
-  for (i = 0; i <  m.triangle_nonzeros_count; ++ i)
-    printf("%f ",lu_uppertr[i]);
-  printf("];\n");
-#endif
-  
-  free(lu_diag);
-  free(lu_lowertr);
-  free(lu_uppertr);
-  
-  free_sparse_matrix(&mtx);
-  free_sparse_matrix(&mtx2);
-  free_sparse_matrix_skyline(&m);
+  /* solve for x */
+  sp_matrix_skyline_ilu_lower_solve(&ILU,b,x);
+  /* test result */
+  for ( i = 0; i < m.rows_count; ++ i)
+    result &= EQL(x[i],x_exact[i]);
+
+  /*
+   * test for solving Ux=b
+   */
+  memset(b,0,sizeof(b));
+  memset(x,0,sizeof(x));
+  /* prepare a right-part vector */
+  sp_matrix_skyline_ilu_upper_mv(&ILU,x_exact,b);
+    
+  /* solve for x */
+  sp_matrix_skyline_ilu_upper_solve(&ILU,b,x);
+  /* test result */
+  for ( i = 0; i < m.rows_count; ++ i)
+    result &= EQL(x[i],x_exact[i]);
+
+  free_sp_matrix(&mtx);
+  free_sp_matrix_skyline_ilu(&ILU);
+  return result;
+}
+
+
+
+BOOL do_tests()
+{
+  BOOL result = TRUE;
+  result &= test_solver();
+  result &= test_ilu();
   return result;
 }
