@@ -789,8 +789,8 @@ void solve( fea_task *task,
   sp_matrix_solve(&solver->global_mtx,
                   solver->global_forces_vct,
                   solver->global_solution_vct);
-  /* for (i = 0; i < solver->global_mtx.rows_count; ++ i) */
-  /*   printf("%f\n",solver->global_solution_vct[i]); */
+  for (i = 0; i < solver->global_mtx.rows_count; ++ i)
+    printf("%f\n",solver->global_solution_vct[i]);
   
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -1148,6 +1148,7 @@ void sp_matrix_solve(sp_matrix* self,real* b,real* x)
   /* reorder columns for to prepare to solve SLAE */
   sp_matrix_reorder(self);
   sp_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x);
+
   printf("iter = %d, tolerance = %e\n",max_iter,tolerance);
 }
 
