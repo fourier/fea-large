@@ -47,6 +47,11 @@ typedef double real;
 
 #define DELTA(i,j) ((i)==(j) ? 1 : 0)
 
+/*************************************************************/
+/* Global variables                                          */
+
+extern int errno;
+struct fea_solver_tag* global_solver;
 
 /*
  * A pointer to the the isoparametric shape
@@ -60,11 +65,10 @@ typedef real (*isoform_t)(int i,real r,real s,real t);
  */
 typedef real (*disoform_t)(int shape,int dof,real r,real s,real t);
 
-/*************************************************************/
-/* Global variables                                          */
-
-extern int errno;
-struct fea_solver_tag* global_solver;
+/*
+ * A pointer to the function for exporting data from solver
+ */ 
+typedef void (*export_solution_t) (struct fea_solver_tag*, char *filename);
 
 /*
  * arrays of gauss nodes with coefficients                   
@@ -315,6 +319,7 @@ typedef struct fea_solver_tag {
                                    * shape function */
   isoform_t shape;                /* a function pointer to the shape
                                    * function */
+  export_solution_t export;     /* a pointer to the export function */
   sp_matrix global_mtx;        /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_solution_vct;    /* vector of global solution */
@@ -581,11 +586,11 @@ BOOL test_ilu();
  * Solver function which shall be called
  * when all data read to an appropriate structures
  */
-void solve( fea_task *task,
-            fea_solution_params *fea_params,
-            nodes_array *nodes,
-            elements_array *elements,
-            prescribed_boundary_array *presc_boundary);
+void solve(fea_task *task,
+           fea_solution_params *fea_params,
+           nodes_array *nodes,
+           elements_array *elements,
+           prescribed_boundary_array *presc_boundary);
 
 #ifdef DUMP_DATA
 /* Dump input data to check if parser works correctly */
@@ -761,22 +766,6 @@ void solve( fea_task *task,
   for ( i = 0; i < solver->elements->elements_count; ++ i)
     solver_local_stiffness(solver,i);
 
-#ifdef DUMP_DATA
-  /* sort column indicies in global matrix */
-  sp_matrix_reorder(&solver->global_mtx);
-
-  if ((f = fopen("row_indexes.txt","w+")))
-  {
-    for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
-    {
-      for ( j = 0; j <= solver->global_mtx.rows[i].last_index; ++ j)
-        fprintf(f,"%d ",solver->global_mtx.rows[i].indexes[j]+1);
-      fprintf(f,"\n");
-    }
-    fclose(f);
-  }
-#endif  
-  
   /* fill the external forces vector */
   solver_create_forces_bc(solver);
   /* apply prescribed boundary conditions */
@@ -789,9 +778,9 @@ void solve( fea_task *task,
   sp_matrix_solve(&solver->global_mtx,
                   solver->global_forces_vct,
                   solver->global_solution_vct);
-  for (i = 0; i < solver->global_mtx.rows_count; ++ i)
-    printf("%f\n",solver->global_solution_vct[i]);
-  
+
+  solver->export(solver,"solution.msh");
+
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
 }
@@ -2301,6 +2290,44 @@ real tetrahedra10_disoform(int shape,int dof,real r,real s,real t)
   return 0;
 }
 
+void solver_export_tetrahedra10_gmsh(fea_solver* solver, char *filename)
+{
+  FILE* f;
+  int i,j;
+  
+  f = fopen(filename,"w+");
+  if ( f )
+  {
+    /* Header */
+    fprintf(f,"$MeshFormat\n");
+    fprintf(f,"2.0 0 8\n");
+    fprintf(f,"$EndMeshFormat\n");
+    /* Geometry */
+    /* Nodes section */
+    fprintf(f,"$Nodes\n");
+    fprintf(f,"%d\n",solver->nodes->nodes_count);
+    for (i = 0; i < solver->nodes->nodes_count; ++ i)
+      fprintf(f,"%d %f %f %f\n",i+1,
+              solver->nodes->nodes[i][0],
+              solver->nodes->nodes[i][1],
+              solver->nodes->nodes[i][2]);
+    fprintf(f,"$EndNodes\n");
+    /* Elements section */
+    fprintf(f,"$Elements\n");
+    fprintf(f,"%d\n", solver->elements->elements_count);
+    for (i = 0; i < solver->elements->elements_count; ++ i)
+    {
+      fprintf(f,"%d 11 3 1 1 1 ",i+1);
+      for (j = 0; j < 10; ++ j)
+        fprintf(f,"%d ",solver->elements->elements[i][j]+1);
+      fprintf(f,"\n");
+    }
+    fprintf(f,"$EndElements\n");
+    
+    fclose(f);
+  }
+}
+
 
 void solver_create_element_params_tetrahedra10(fea_solver* solver)
 {
@@ -2315,6 +2342,7 @@ void solver_create_element_params_tetrahedra10(fea_solver* solver)
     solver->elements_db.gauss_nodes_data = gauss_nodes5_tetr10;
     break;
   }
+  solver->export = solver_export_tetrahedra10_gmsh;
 }
 
 
