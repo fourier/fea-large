@@ -742,8 +742,6 @@ void solve( fea_task *task,
   int i;
   
 #ifdef DUMP_DATA
-  int j;
-  FILE* f;
   /* Dump all data in debug version */
   dump_input_data(task,fea_params,nodes,elements,presc_boundary);
 #endif
