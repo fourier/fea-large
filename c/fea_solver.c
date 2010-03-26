@@ -52,6 +52,7 @@ typedef double real;
 
 extern int errno;
 struct fea_solver_tag* global_solver;
+typedef struct fea_solver_tag* fea_solver_ptr;
 
 /*
  * A pointer to the the isoparametric shape
@@ -68,7 +69,7 @@ typedef real (*disoform_t)(int shape,int dof,real r,real s,real t);
 /*
  * A pointer to the function for exporting data from solver
  */ 
-typedef void (*export_solution_t) (struct fea_solver_tag*, char *filename);
+typedef void (*export_solution_t) (fea_solver_ptr, char *filename);
 
 /*
  * arrays of gauss nodes with coefficients                   
@@ -122,7 +123,7 @@ typedef enum element_type_enum {
   TETRAHEDRA10
 } element_type;
 
-typedef enum prescribed_boundary_type_enum {
+typedef enum presc_boundary_type_enum {
   FREE = 0,                    /* free */
   PRESCRIBEDX = 1,             /* x prescribed */
   PRESCRIBEDY = 2,             /* y prescribed */
@@ -131,7 +132,7 @@ typedef enum prescribed_boundary_type_enum {
   PRESCRIBEDXZ = 5,            /* x, z prescribed*/
   PRESCRIBEDYZ = 6,            /* y, z prescribed*/
   PRESCRIBEDXYZ = 7            /* x, y, z prescribed.*/
-} prescribed_boundary_type;
+} presc_boundary_type;
 
 
 typedef struct fea_material_model_tag {
@@ -139,6 +140,7 @@ typedef struct fea_material_model_tag {
   real parameters[MAX_MATERIAL_PARAMETERS]; /* model material parameters */
   int parameters_count;                     /* number of material params */
 } fea_model;
+typedef fea_model* fea_model_ptr;
 
 /*
  * Task type declaration.
@@ -157,7 +159,7 @@ typedef struct fea_task_tag {
   BOOL modified_newton;         /* use modified Newton's method or not */
 
 } fea_task;
-
+typedef fea_task* fea_task_ptr;
 
 /* Calculated solution parameters */
 typedef struct fea_solution_params_tag {
@@ -165,6 +167,7 @@ typedef struct fea_solution_params_tag {
                                    based on fea_task::ele_type */
   int gauss_nodes_count;        /* number of gauss nodes per element */
 } fea_solution_params;
+typedef fea_solution_params* fea_solution_params_ptr;
 
 /*************************************************************/
 /* Input geometry parameters                                 */
@@ -173,8 +176,9 @@ typedef struct fea_solution_params_tag {
 typedef struct nodes_array_tag {
   int nodes_count;              /* number of input nodes */
   real **nodes;         /* nodes array,sized as nodes_count x MAX_DOF
-                                 * so access is  nodes[node_number][dof] */
+                         * so access is  nodes[node_number][dof] */
 } nodes_array;
+typedef nodes_array* nodes_array_ptr;
 
 /* An array of elements */
 typedef struct elements_array_tag {
@@ -184,23 +188,25 @@ typedef struct elements_array_tag {
                                  * indexes
                                  */
 } elements_array;
+typedef elements_array* elements_array_ptr;
 
 /* Particular prescribed boundary node */
 typedef struct prescibed_boundary_node_tag {
   int node_number;
   real values[MAX_DOF];
-  prescribed_boundary_type type;
+  presc_boundary_type type;
 } prescibed_boundary_node;
+typedef prescibed_boundary_node* prescibed_boundary_node_ptr;
 
 /*
  * An array of prescribed boundary conditions
  * either fixed and with prescribed displacements
  */
-typedef struct prescribed_boundary_array_tag {
+typedef struct presc_boundary_array_tag {
   int prescribed_nodes_count;
-  prescibed_boundary_node *prescribed_nodes;
-} prescribed_boundary_array;
-
+  prescibed_boundary_node* prescribed_nodes;
+} presc_boundary_array;
+typedef presc_boundary_array* presc_boundary_array_ptr;
 
 /*************************************************************/
 /* Application-specific structures                           */
@@ -216,6 +222,7 @@ typedef struct gauss_node_tag {
                                * Rows represent d.o.f, columns represent
                                * derivatives in nodes */
 } gauss_node;
+typedef gauss_node* gauss_node_ptr;
 
 /*
  * database of elements
@@ -225,8 +232,10 @@ typedef struct gauss_node_tag {
 typedef struct elements_database_tag {
   real (*gauss_nodes_data)[4];  /* pointer to an array of gauss
                                    * coefficients and weights */  
-  gauss_node **gauss_nodes;   /* Gauss nodes array */
+  gauss_node_ptr *gauss_nodes;   /* Gauss nodes array */
 } elements_database;
+typedef elements_database* elements_database_ptr;
+
 
 /*
  * Matrix of gradients of the shape functions with respect to
@@ -241,10 +250,11 @@ typedef struct elements_database_tag {
  * 
  */
 typedef struct shape_gradients_tag {
-  real **grad;                  /* array of derivatives of shape functions
-                                 * [dof x nodes_per_element] */
+  real **grads;                  /* array of derivatives of shape functions
+                                  * [dof x nodes_per_element] */
   real detJ;                    /* determinant of Jacobi matrix */
 } shape_gradients;
+typedef shape_gradients* shape_gradients_ptr;
 
 
 /*
@@ -256,6 +266,7 @@ typedef struct indexed_array_tag {
   int *indexes;
   real *values;
 } indexed_array;
+typedef indexed_array* indexed_array_ptr;
 
 /*
  * Sparse matrix row storage 
@@ -267,7 +278,7 @@ typedef struct sp_matrix_tag {
   indexed_array* rows;
   BOOL ordered;
 } sp_matrix;
-
+typedef sp_matrix* sp_matrix_ptr;
 
 /*
  * Sparse matrix CSLR(Skyline) format
@@ -289,6 +300,7 @@ typedef struct sp_matrix_skyline_tag {
   int *iptr;                    /* array of row/column offsets in jptr
                                  * for lower or upper triangles */
 } sp_matrix_skyline;
+typedef sp_matrix_skyline* sp_matrix_skyline_ptr;
 
 /*
  * ILU decomposition of the sparse matrix in Skyline (CSLR) format
@@ -300,17 +312,19 @@ typedef struct sp_matrix_skyline_ilu_tag {
   real *ilu_lowertr;           /* nonzero elements of the lower(L) matrix */
   real *ilu_uppertr;           /* nonzero elements of the upper(U) matrix */
 } sp_matrix_skyline_ilu;
+typedef sp_matrix_skyline_ilu* sp_matrix_skyline_ilu_ptr;
 
 /*
  * A main application structure which shall contain all
  * data necessary for solution
  */
 typedef struct fea_solver_tag {
-  fea_task *task;               
-  fea_solution_params *fea_params; 
-  nodes_array *nodes;              
-  elements_array *elements;
-  prescribed_boundary_array *presc_boundary;
+  fea_task_ptr task_p;               
+  fea_solution_params_ptr fea_params_p; 
+  nodes_array_ptr nodes0_p;
+  nodes_array_ptr nodes_p;              
+  elements_array_ptr elements_p;
+  presc_boundary_array_ptr presc_boundary_p;
   elements_database elements_db;  /* array of pre-constructed
                                    * values of derivatives of the
                                    * isoparametric shape functions
@@ -320,7 +334,7 @@ typedef struct fea_solver_tag {
   isoform_t shape;                /* a function pointer to the shape
                                    * function */
   export_solution_t export;     /* a pointer to the export function */
-  sp_matrix global_mtx;        /* global stiffness matrix */
+  sp_matrix global_mtx;         /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_solution_vct;    /* vector of global solution */
 } fea_solver;
@@ -335,11 +349,11 @@ typedef struct fea_solver_tag {
  * Load initial data from file
  */
 BOOL initial_data_load(char *filename,
-                       fea_task **task,
-                       fea_solution_params **fea_params,
-                       nodes_array **nodes,
-                       elements_array **elements,
-                       prescribed_boundary_array **presc_boundary);
+                       fea_task_ptr *task,
+                       fea_solution_params_ptr *fea_params,
+                       nodes_array_ptr *nodes,
+                       elements_array_ptr *elements,
+                       presc_boundary_array_ptr *presc_boundary);
 
 
 /*************************************************************/
@@ -349,42 +363,44 @@ BOOL initial_data_load(char *filename,
 /* Allocators for structures with a data from file           */
 
 /* Initializa fea task structure and fill with default values */
-static fea_task* new_fea_task();
+static fea_task_ptr new_fea_task();
 /* Initializes fea solution params with default values */
-static fea_solution_params* new_fea_solution_params();
+static fea_solution_params_ptr new_fea_solution_params();
 /* Initialize nodes array but not initialize particular arrays  */
-static nodes_array* new_nodes_array();
+static nodes_array_ptr new_nodes_array();
+/* create a copy of nodes array */
+static nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes);
 /* Initialize elements array but not initialize particular elements */
-static elements_array* new_elements_array();
+static elements_array_ptr new_elements_array();
 /* Initialize boundary nodes array but not initialize particular nodes */
-static prescribed_boundary_array* new_prescribed_boundary_array();
+static presc_boundary_array_ptr new_presc_boundary_array();
 
 /*
  * Constructor for the main application structure
  * all parameters shall be properly constructed and initialized
  * with data from file
  */
-static fea_solver* new_fea_solver(fea_task *task,
-                                  fea_solution_params *fea_params,
-                                  nodes_array *nodes,
-                                  elements_array *elements,
-                                  prescribed_boundary_array *prscs_boundary);
+static fea_solver_ptr new_fea_solver(fea_task_ptr task,
+                                     fea_solution_params_ptr fea_params,
+                                     nodes_array_ptr nodes,
+                                     elements_array_ptr elements,
+                                     presc_boundary_array_ptr presc);
 
 
 /*************************************************************/
 /* Deallocators for internal data structures                 */
 
-static void free_fea_solution_params(fea_solution_params* params);
-static void free_fea_task(fea_task* task);
-static void free_nodes_array(nodes_array* nodes);
-static void free_elements_array(elements_array *elements);
-static void free_prescribed_boundary_array(prescribed_boundary_array* presc);
+static void free_fea_solution_params(fea_solution_params_ptr params);
+static void free_fea_task(fea_task_ptr task);
+static void free_nodes_array(nodes_array_ptr nodes);
+static void free_elements_array(elements_array_ptr elements);
+static void free_presc_boundary_array(presc_boundary_array_ptr presc);
 
 /*
  * Destructor for the main solver
  * Will also clear all aggregated structures
  */
-static void free_fea_solver(fea_solver* solver);
+static void free_fea_solver(fea_solver_ptr solver);
 
 
 /*************************************************************/
@@ -393,9 +409,9 @@ static void free_fea_solver(fea_solver* solver);
 /* indexed_arrays operations */
 /* Swap i and j elements in the indexed array.
  * Used in indexed_array_sort*/
-void indexed_array_swap(indexed_array* self,int i, int j);
+void indexed_array_swap(indexed_array_ptr self,int i, int j);
 /* Performs in-place sort of the indexed array */
-void indexed_array_sort(indexed_array* self, int l, int r);
+void indexed_array_sort(indexed_array_ptr self, int l, int r);
 
 
 /*
@@ -405,7 +421,7 @@ void indexed_array_sort(indexed_array* self, int l, int r);
  * only for its structures. Matrix mtx shall be already allocated
  * bandwdith - is a start bandwidth of a matrix row
  */
-static void init_sp_matrix(sp_matrix* mtx,
+static void init_sp_matrix(sp_matrix_ptr mtx,
                            int rows,
                            int cols,
                            int bandwidth);
@@ -414,48 +430,49 @@ static void init_sp_matrix(sp_matrix* mtx,
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sp_matrix(sp_matrix* mtx);
+static void free_sp_matrix(sp_matrix_ptr mtx);
 
 /*
  * Construct CSLR sparse matrix based on sp_matrix format
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
  */
-static void init_sp_matrix_skyline(sp_matrix_skyline* self,
-                                   sp_matrix* mtx);
+static void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,
+                                   sp_matrix_ptr mtx);
 /*
  * Destructor for a sparse matrix in CSLR format
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sp_matrix_skyline(sp_matrix_skyline* self);
+static void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
 
 /* getters/setters for a sparse matrix */
 
 /* returns a pointer to the specific element
  * zero pointer if not found */
-static real* sp_matrix_element(sp_matrix* self,int i, int j);
+static real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
-static void sp_matrix_element_add(sp_matrix* self,int i, int j, real value);
+static void sp_matrix_element_add(sp_matrix_ptr self,
+                                  int i, int j, real value);
 
 /* rearrange columns of a matrix to prepare for solving SLAE */
-static void sp_matrix_reorder(sp_matrix* self);
+static void sp_matrix_reorder(sp_matrix_ptr self);
 
 /*
  * Implements BLAS level 2 function SAXPY: y = A*x+b
  * All vectors shall be already allocated
-static void sp_matrix_saxpy((sp_matrix* self,real* b,real* x, real* y);
+static void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
  */
 
 /* Matrix-vector multiplication
  * y = A*x*/
-static void sp_matrix_mv(sp_matrix* self,real* x, real* y);
+static void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y);
 
 /*
  * Solve SLAE for a matrix self with right-part b
  * Store results to the vector x. It shall be already allocated
  */
-static void sp_matrix_solve(sp_matrix* self,real* b,real* x);
+static void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x);
 /*
  * Conjugate Grade solver
  * self - matrix
@@ -467,7 +484,7 @@ static void sp_matrix_solve(sp_matrix* self,real* b,real* x);
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-static void sp_matrix_solve_cg(sp_matrix* self,
+static void sp_matrix_solve_cg(sp_matrix_ptr self,
                                real* b,
                                real* x0,
                                int* max_iter,
@@ -486,7 +503,7 @@ static void sp_matrix_solve_cg(sp_matrix* self,
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-static void sp_matrix_solve_pcg(sp_matrix* self,
+static void sp_matrix_solve_pcg(sp_matrix_ptr self,
                                 real* b,
                                 real* x0,
                                 int* max_iter,
@@ -500,24 +517,24 @@ static void sp_matrix_solve_pcg(sp_matrix* self,
  * lu_lowertr - lower triangle of the ILU decomposition
  * lu_uppertr - upper triangle of the ILU decomposition
  */
-static void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self,
-                                            sp_matrix_skyline* parent);
+static void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
+                                            sp_matrix_skyline_ptr parent);
 
 /* Free the sparse matrix skyline & ilu decomposition structure */
-static void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self);
+static void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
 
 /*
  * by given L,U - ILU decomposition of the matrix A
  * calculates L*x = y
  */
-static void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu* self,
+static void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu_ptr self,
                                            real* x,
                                            real* y);
 /*
  * by given L,U - ILU decomposition of the matrix A
  * calculates U*x = y
  */
-static void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu* self,
+static void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
                                            real* x,
                                            real* y);
 
@@ -526,7 +543,7 @@ static void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu* self,
  * Solves SLAE L*x = b
  * Warning! Side-Effect: modifies b
  */
-static void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu* self,
+static void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
                                               real* b,
                                               real* x);
 
@@ -535,14 +552,14 @@ static void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu* self,
  * Solves SLAE U*x = b
  * Warning! Side-Effect: modifies b 
  */
-static void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu* self,
+static void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
                                               real* b,
                                               real* x);
 
 
 #ifdef DUMP_DATA
-static void sp_matrix_dump(sp_matrix* self);
-static void sp_matrix_skyline_dump(sp_matrix_skyline* self);
+static void sp_matrix_dump(sp_matrix_ptr self);
+static void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self);
 #endif
 
 
@@ -586,19 +603,19 @@ BOOL test_ilu();
  * Solver function which shall be called
  * when all data read to an appropriate structures
  */
-void solve(fea_task *task,
-           fea_solution_params *fea_params,
-           nodes_array *nodes,
-           elements_array *elements,
-           prescribed_boundary_array *presc_boundary);
+void solve(fea_task_ptr ask,
+           fea_solution_params_ptr fea_params,
+           nodes_array_ptr nodes,
+           elements_array_ptr elements,
+           presc_boundary_array_ptr presc_boundary);
 
 #ifdef DUMP_DATA
 /* Dump input data to check if parser works correctly */
-void dump_input_data( fea_task *task,
-                      fea_solution_params *fea_params,
-                      nodes_array *nodes,
-                      elements_array *elements,
-                      prescribed_boundary_array *presc_boundary);
+void dump_input_data( fea_task_ptr task,
+                      fea_solution_params_ptr fea_params,
+                      nodes_array_ptr nodes,
+                      elements_array_ptr elements,
+                      presc_boundary_array_ptr presc_boundary);
 #endif
 
 /*************************************************************/
@@ -609,19 +626,19 @@ void dump_input_data( fea_task *task,
  * of gauss nodes for particular element type.
  * This function is used on a construction phase
  */
-static void solver_create_element_params(fea_solver* self);
+static void solver_create_element_params(fea_solver_ptr self);
 
 /* Allocates memory and construct elements database for solver */
-static void solver_create_element_database(fea_solver* self);
+static void solver_create_element_database(fea_solver_ptr self);
 /* Destructor for the element database */
-static void solver_free_element_database(fea_solver* self);
+static void solver_free_element_database(fea_solver_ptr self);
 
 /*
  * Constructs material tensor of 4th rank
  * by given deformation gradient graddef into the output array
  * ctensor
  */
-static void solver_ctensor(fea_solver* self,
+static void solver_ctensor(fea_solver_ptr self,
                            real (*graddef)[MAX_DOF],
                            real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
 
@@ -629,12 +646,12 @@ static void solver_ctensor(fea_solver* self,
  * Returns a particular component of a node with local index 'node'
  * in element with index 'element' for the d.o.f. 'dof'
  */
-static real solver_node_dof(fea_solver* self,
+static real solver_node_dof(fea_solver_ptr self,
                             int element,
                             int node,
                             int dof)
 {
-  return self->nodes->nodes[self->elements->elements[element][node]][dof];
+  return self->nodes_p->nodes[self->elements_p->elements[element][node]][dof];
 }
 
 
@@ -643,26 +660,36 @@ static real solver_node_dof(fea_solver* self,
  * element - index of the element to calculate in
  * gauss - index of gauss node
  */
-static shape_gradients* solver_new_shape_gradients(fea_solver* self,
-                                                   int element,
-                                                   int gauss);
+static shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
+                                                      int element,
+                                                      int gauss);
 /* Destructor for the shape gradients array */
-static void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads);
+static void solver_free_shape_gradients(fea_solver_ptr self,
+                                        shape_gradients_ptr grads);
 
 /* Create and distribute local stiffness matrix for the element */
-static void solver_local_stiffness(fea_solver* self,int element);
+static void solver_local_stiffness(fea_solver_ptr self,int element);
 
 /* Fill greate global forces vector */
-static void solver_create_forces_bc(fea_solver* self);
+static void solver_create_forces_bc(fea_solver_ptr self);
 
 /* Apply BC in form of prescribed displacements */
-static void solver_apply_prescribed_bc(fea_solver* self);
+static void solver_apply_prescribed_bc(fea_solver_ptr self);
 
 /* Apply BC in form of prescribed displacements to a single specified
  * global d.o.f.
  * This function is called from solver_apply_prescribed_bc
  */
-static void solver_apply_single_bc(fea_solver* self, int index, real value);
+static void solver_apply_single_bc(fea_solver_ptr self,
+                                   int index, real value);
+/*
+ * Update array solver->nodes with displacements from vector x
+ * This function may be used for:
+ * 1) calculation of the deformation gradients
+ * 2) create deformed configuration by applying prescribed displacements
+ */
+static void solver_update_nodes_with_displacements(fea_solver_ptr self,
+                                                   real* x);
 
 /*************************************************************/
 /* Auxulary functions                                        */
@@ -704,11 +731,11 @@ int do_main(char* filename)
 {
   /* initialize variables */
   int result = 0;
-  fea_task *task = (fea_task *)0;
-  fea_solution_params *fea_params = (fea_solution_params*)0;
-  nodes_array *nodes = (nodes_array*)0;
-  elements_array *elements = (elements_array*)0;
-  prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)0;
+  fea_task_ptr task = (fea_task_ptr)0;
+  fea_solution_params_ptr fea_params = (fea_solution_params_ptr)0;
+  nodes_array_ptr nodes = (nodes_array_ptr)0;
+  elements_array_ptr elements = (elements_array_ptr)0;
+  presc_boundary_array_ptr presc_boundary = (presc_boundary_array_ptr)0;
 
   /* Set the application exit handler */
   /* atexit(application_done); */
@@ -731,14 +758,14 @@ int do_main(char* filename)
   return result;
 }
 
-void solve( fea_task *task,
-            fea_solution_params *fea_params,
-            nodes_array *nodes,
-            elements_array *elements,
-            prescribed_boundary_array *presc_boundary)
+void solve( fea_task_ptr task,
+            fea_solution_params_ptr fea_params,
+            nodes_array_ptr nodes,
+            elements_array_ptr elements,
+            presc_boundary_array_ptr presc_boundary)
 {
   /* initialize variables */
-  fea_solver *solver = (fea_solver*)0;
+  fea_solver_ptr solver = (fea_solver_ptr)0;
   int i;
   
 #ifdef DUMP_DATA
@@ -763,7 +790,7 @@ void solve( fea_task *task,
   
   /* loop by elements - create local stiffnesses and redistribute them
    * in the global stiffness matrix */
-  for ( i = 0; i < solver->elements->elements_count; ++ i)
+  for ( i = 0; i < solver->elements_p->elements_count; ++ i)
     solver_local_stiffness(solver,i);
 
   /* fill the external forces vector */
@@ -778,8 +805,9 @@ void solve( fea_task *task,
   sp_matrix_solve(&solver->global_mtx,
                   solver->global_forces_vct,
                   solver->global_solution_vct);
-
-  solver->export(solver,"solution.msh");
+  /* update nodes array with solution */
+  solver_update_nodes_with_displacements(solver,solver->global_solution_vct);
+  solver->export(solver,"deformed.msh");
 
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -798,11 +826,11 @@ int parse_cmdargs(int argc, char **argv,char **filename)
 }
 
 #ifdef DUMP_DATA
-void dump_input_data( fea_task *task,
-                      fea_solution_params *fea_params,
-                      nodes_array *nodes,
-                      elements_array *elements,
-                      prescribed_boundary_array *presc_boundary)
+void dump_input_data( fea_task_ptr task,
+                      fea_solution_params_ptr fea_params,
+                      nodes_array_ptr nodes,
+                      elements_array_ptr elements,
+                      presc_boundary_array_ptr presc_boundary)
 {
   int i,j;
   FILE *f;
@@ -849,7 +877,7 @@ void application_done(void)
   
 }
 
-void init_sp_matrix(sp_matrix* mtx,
+void init_sp_matrix(sp_matrix_ptr mtx,
                     int rows,
                     int cols,
                     int bandwidth)
@@ -875,7 +903,7 @@ void init_sp_matrix(sp_matrix* mtx,
 }
 
 
-void free_sp_matrix(sp_matrix* mtx)
+void free_sp_matrix(sp_matrix_ptr mtx)
 {
   int i;
   if (mtx)
@@ -892,7 +920,7 @@ void free_sp_matrix(sp_matrix* mtx)
   }
 }
 
-void init_sp_matrix_skyline(sp_matrix_skyline* self,sp_matrix* mtx)
+void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 {
   /*
    * Construct CSLR matrix from the sp_matrix
@@ -979,7 +1007,7 @@ void init_sp_matrix_skyline(sp_matrix_skyline* self,sp_matrix* mtx)
   self->iptr[i] = self->tr_nonzeros;
 }
 
-void free_sp_matrix_skyline(sp_matrix_skyline* self)
+void free_sp_matrix_skyline(sp_matrix_skyline_ptr self)
 {
   if (self)
   {
@@ -996,7 +1024,7 @@ void free_sp_matrix_skyline(sp_matrix_skyline* self)
 }
 
 
-real* sp_matrix_element(sp_matrix* self,int i, int j)
+real* sp_matrix_element(sp_matrix_ptr self,int i, int j)
 {
   int index;
   /* check for matrix and if i,j are proper indicies */
@@ -1012,7 +1040,7 @@ real* sp_matrix_element(sp_matrix* self,int i, int j)
   return (real*)0;
 }
 
-void sp_matrix_element_add(sp_matrix* self,int i, int j, real value)
+void sp_matrix_element_add(sp_matrix_ptr self,int i, int j, real value)
 {
   int index,new_width;
   int* indexes = (int*)0;
@@ -1056,7 +1084,7 @@ void sp_matrix_element_add(sp_matrix* self,int i, int j, real value)
 }
 
 /* Swap 2 elements of the indexed array */
-void indexed_array_swap(indexed_array* self,int i, int j)
+void indexed_array_swap(indexed_array_ptr self,int i, int j)
 {
   int tmp_idx;
   real tmp_val;
@@ -1068,7 +1096,7 @@ void indexed_array_swap(indexed_array* self,int i, int j)
   self->values[j] = tmp_val;
 }
 
-void indexed_array_sort(indexed_array* self, int l, int r)
+void indexed_array_sort(indexed_array_ptr self, int l, int r)
 {
   /*
    * Quick sort procedure for indexed(compressed) arrays
@@ -1110,7 +1138,7 @@ void indexed_array_sort(indexed_array* self, int l, int r)
 }
 
 
-void sp_matrix_reorder(sp_matrix* self)
+void sp_matrix_reorder(sp_matrix_ptr self)
 {
   int i;
   
@@ -1119,7 +1147,7 @@ void sp_matrix_reorder(sp_matrix* self)
   self->ordered = TRUE;
 }
 
-void sp_matrix_mv(sp_matrix* self,real* x, real* y)
+void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y)
 {
   int i,j;
   for ( i = 0; i < self->rows_count; ++ i)
@@ -1130,7 +1158,7 @@ void sp_matrix_mv(sp_matrix* self,real* x, real* y)
   }
 }
 
-void sp_matrix_solve(sp_matrix* self,real* b,real* x)
+void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
 {
   real tolerance = 1e-15;
   int max_iter = 20000;
@@ -1141,12 +1169,12 @@ void sp_matrix_solve(sp_matrix* self,real* b,real* x)
   printf("iter = %d, tolerance = %e\n",max_iter,tolerance);
 }
 
-void sp_matrix_solve_cg(sp_matrix* self,
-                                real* b,
-                                real* x0,
-                                int* max_iter,
-                                real* tolerance,
-                                real* x)
+void sp_matrix_solve_cg(sp_matrix_ptr self,
+                        real* b,
+                        real* x0,
+                        int* max_iter,
+                        real* tolerance,
+                        real* x)
 {
   /* Conjugate Gradient Algorithm */
   /*
@@ -1242,13 +1270,20 @@ void sp_matrix_solve_cg(sp_matrix* self,
   free(temp);
 }
 
-void sp_matrix_solve_pcg(sp_matrix* self,
-                             real* b,
-                             real* x0,
-                             int* max_iter,
-                             real* tolerance,
-                             real* x)
+void sp_matrix_solve_pcg(sp_matrix_ptr self,
+                         real* b,
+                         real* x0,
+                         int* max_iter,
+                         real* tolerance,
+                         real* x)
 {
+  /* Preconditioned Conjugate Gradient Algorithm */
+  /*
+   * Taken from the book:
+   * Saad Y. Iterative methods for sparse linear systems (2ed., 2000)
+   * page 246
+   */
+
   /* variables */
   int i,j;
   real alpha, beta,a1,a2;
@@ -1309,9 +1344,9 @@ void sp_matrix_solve_pcg(sp_matrix* self,
    * U*x = y => x
    */ 
   sp_matrix_skyline_ilu_lower_solve(&ILU,r1,temp); /* temp = L^{-1}*r */
-  /* r now corrupted, temp contains solution */
+  /* r1 now changed, temp contains solution */
   sp_matrix_skyline_ilu_upper_solve(&ILU,temp,z); /* z = U^{-1}*temp */
-  /* temp now corrupted, z contains solution*/
+  /* temp now changed, z contains solution*/
   
   /* p_0 = z_0 */
   memcpy(p,z,size);
@@ -1386,8 +1421,8 @@ void sp_matrix_solve_pcg(sp_matrix* self,
   free_sp_matrix_skyline_ilu(&ILU);
 }
 
-void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self,
-                                     sp_matrix_skyline* parent)
+void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
+                                     sp_matrix_skyline_ptr parent)
 {
   int i,j,k,l,q;
   real sum;
@@ -1464,7 +1499,7 @@ void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self,
   }
 }
 
-void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self)
+void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self)
 {
   free(self->ilu_diag);
   free(self->ilu_lowertr);
@@ -1473,7 +1508,7 @@ void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu* self)
 }
 
 
-void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu* self,
+void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu_ptr self,
                                     real* x,
                                     real* y)
 {
@@ -1487,7 +1522,7 @@ void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu* self,
   }
 }
 
-void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu* self,
+void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
                                     real* x,
                                     real* y)
 {
@@ -1503,7 +1538,7 @@ void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu* self,
   }
 }
 
-void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu* self,
+void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
                                        real* b,
                                        real* x)
 {
@@ -1513,14 +1548,12 @@ void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu* self,
   for ( i = 0; i < self->parent.rows_count; ++ i)
   {
     for (j = self->parent.iptr[i]; j < self->parent.iptr[i+1]; ++ j)
-    {
       b[i] -= x[self->parent.jptr[j]]*self->ilu_lowertr[j];
-    }
     x[i] = b[i];
   }
 }
 
-void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu* self,
+void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
                                        real* b,
                                        real* x)
 {
@@ -1531,16 +1564,14 @@ void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu* self,
   {
     x[i] = b[i]/self->ilu_diag[i];
     for (j = self->parent.iptr[i]; j < self->parent.iptr[i+1]; ++ j)
-    {
       b[self->parent.jptr[j]] -= x[i]*self->ilu_uppertr[j];
-    }
   }
 }
 
 
 
 #ifdef DUMP_DATA
-void sp_matrix_dump(sp_matrix* self)
+void sp_matrix_dump(sp_matrix_ptr self)
 {
   FILE* f;
   int i,j;
@@ -1583,7 +1614,7 @@ void sp_matrix_dump(sp_matrix* self)
 
 
 
-void sp_matrix_skyline_dump(sp_matrix_skyline* self)
+void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self)
 {
   int i;
   
@@ -1616,28 +1647,29 @@ void sp_matrix_skyline_dump(sp_matrix_skyline* self)
 
 
 
-fea_solver* new_fea_solver(fea_task *task,
-                           fea_solution_params *fea_params,
-                           nodes_array *nodes,
-                           elements_array *elements,
-                           prescribed_boundary_array *prs_boundary)
+fea_solver* new_fea_solver(fea_task_ptr task,
+                           fea_solution_params_ptr fea_params,
+                           nodes_array_ptr nodes,
+                           elements_array_ptr elements,
+                           presc_boundary_array_ptr prs_boundary)
 {
   int msize,bandwidth;
   /* Allocate structure */
-  fea_solver* solver = malloc(sizeof(fea_solver));
+  fea_solver_ptr solver = malloc(sizeof(fea_solver));
   /* Copy pointers to the solver structure */
-  solver->task = task;
-  solver->fea_params = fea_params;
-  solver->nodes = nodes;
-  solver->elements = elements;
-  solver->presc_boundary = prs_boundary;
+  solver->task_p = task;
+  solver->fea_params_p = fea_params;
+  solver->nodes0_p = nodes;
+  solver->nodes_p = new_copy_nodes_array(nodes);
+  solver->elements_p = elements;
+  solver->presc_boundary_p = prs_boundary;
 
   solver->elements_db.gauss_nodes = (gauss_node**)0;
   solver_create_element_params(solver);
 
   /* allocate resources initialize global stiffness matrix */
   /* global matrix size */
-  msize = nodes->nodes_count*solver->task->dof;
+  msize = nodes->nodes_count*solver->task_p->dof;
   /* approximate bandwidth of a global matrix
    * usually sqrt(msize)*2*/
   bandwidth = (int)sqrt(msize)*2;
@@ -1651,15 +1683,16 @@ fea_solver* new_fea_solver(fea_task *task,
 }
 
 
-void free_fea_solver(fea_solver* solver)
+void free_fea_solver(fea_solver_ptr solver)
 {
   /* deallocate resources */
   solver_free_element_database(solver);
-  free_fea_task(solver->task);
-  free_fea_solution_params(solver->fea_params);
-  free_nodes_array(solver->nodes);
-  free_elements_array(solver->elements);
-  free_prescribed_boundary_array(solver->presc_boundary);
+  free_fea_task(solver->task_p);
+  free_fea_solution_params(solver->fea_params_p);
+  free_nodes_array(solver->nodes0_p);
+  free_nodes_array(solver->nodes_p);
+  free_elements_array(solver->elements_p);
+  free_presc_boundary_array(solver->presc_boundary_p);
   free_sp_matrix(&solver->global_mtx);
   free(solver->global_forces_vct);
   free(solver->global_solution_vct);
@@ -1678,23 +1711,23 @@ static gauss_node *solver_new_gauss_node(fea_solver* self,
   real r,s,t;
   /* Check for array bounds*/
   if (gauss_node_index >= 0 &&
-      gauss_node_index < self->fea_params->gauss_nodes_count)
+      gauss_node_index < self->fea_params_p->gauss_nodes_count)
   {
     node = malloc(sizeof(gauss_node));
     /* set the weight for this gauss node */
     node->weight = self->elements_db.gauss_nodes_data[gauss_node_index][0];
     /* set shape function values and their derivatives for this node */
-    node->forms = malloc(sizeof(real)*(self->fea_params->nodes_per_element));
-    node->dforms = malloc(sizeof(real*)*(self->task->dof));
-    for ( i = 0; i < self->task->dof; ++ i)
-      node->dforms[i] = malloc(sizeof(real)*(self->fea_params->nodes_per_element));
-    for ( i = 0; i < self->fea_params->nodes_per_element; ++ i)
+    node->forms = malloc(sizeof(real)*(self->fea_params_p->nodes_per_element));
+    node->dforms = malloc(sizeof(real*)*(self->task_p->dof));
+    for ( i = 0; i < self->task_p->dof; ++ i)
+      node->dforms[i] = malloc(sizeof(real)*(self->fea_params_p->nodes_per_element));
+    for ( i = 0; i < self->fea_params_p->nodes_per_element; ++ i)
     {
       r = self->elements_db.gauss_nodes_data[gauss_node_index][1];
       s = self->elements_db.gauss_nodes_data[gauss_node_index][2];
       t = self->elements_db.gauss_nodes_data[gauss_node_index][3];
       node->forms[i] = self->shape(i,r,s,t);
-      for ( j = 0; j < self->task->dof; ++ j)
+      for ( j = 0; j < self->task_p->dof; ++ j)
         node->dforms[j][i] = self->dshape(i,j,r,s,t);
     }
 
@@ -1711,7 +1744,7 @@ static void solver_free_gauss_node(fea_solver *self,
   {
     /* clear forms and dforms arrays */
     free(node->forms);
-    for ( i = 0; i < self->task->dof; ++ i)
+    for ( i = 0; i < self->task_p->dof; ++ i)
       free(node->dforms[i]);
     free(node->dforms);
     /* free the node itself */
@@ -1723,7 +1756,7 @@ static void solver_free_gauss_node(fea_solver *self,
 void solver_create_element_database(fea_solver* self)
 {
   int gauss;
-  int gauss_count = self->fea_params->gauss_nodes_count;
+  int gauss_count = self->fea_params_p->gauss_nodes_count;
   /* Create database only if not created yet */
   if (!self->elements_db.gauss_nodes)
   {
@@ -1737,27 +1770,27 @@ void solver_create_element_database(fea_solver* self)
   }
 }
 
-void solver_free_element_database(fea_solver* solver)
+void solver_free_element_database(fea_solver_ptr solver)
 {
   int gauss;
   if (solver->elements_db.gauss_nodes)
   {
-    for (gauss = 0; gauss < solver->fea_params->gauss_nodes_count; ++gauss)
+    for (gauss = 0; gauss < solver->fea_params_p->gauss_nodes_count; ++gauss)
       solver_free_gauss_node(solver,solver->elements_db.gauss_nodes[gauss]);
     
     free(solver->elements_db.gauss_nodes);
   }
 }
 
-static void solver_create_element_params_tetrahedra10(fea_solver* solver);
+static void solver_create_element_params_tetrahedra10(fea_solver_ptr solver);
 
 /*
  * Creates particular element-dependent data in fea_solver
  * All new element types shall be added here 
  */
-void solver_create_element_params(fea_solver* solver)
+void solver_create_element_params(fea_solver_ptr solver)
 {
-  switch (solver->task->ele_type)
+  switch (solver->task_p->ele_type)
   {
   case TETRAHEDRA10:
     solver_create_element_params_tetrahedra10(solver);
@@ -1814,9 +1847,9 @@ static void solver_dump_shape_gradients(fea_solver* self,
 }
 #endif
 
-shape_gradients* solver_new_shape_gradients(fea_solver* self,
-                                                   int element,
-                                                   int gauss)
+shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
+                                               int element,
+                                               int gauss)
 {
   int i,j,k;
   int row_size;
@@ -1824,7 +1857,7 @@ shape_gradients* solver_new_shape_gradients(fea_solver* self,
   /* J is a Jacobi matrix of transformation btw local and global */
   /* coordinate systems */
   real J[MAX_DOF][MAX_DOF];
-  shape_gradients* grads = (shape_gradients*)0;
+  shape_gradients_ptr grads = (shape_gradients_ptr)0;
 
   /* Fill an array using Bonet & Wood 7.6(a,b) p.198, 1st edition */
   /* also see Zienkiewitz v1, 6th edition, p.146-147 */
@@ -1850,7 +1883,7 @@ shape_gradients* solver_new_shape_gradients(fea_solver* self,
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
     {
-      for (k = 0; k < self->fea_params->nodes_per_element; ++ k)
+      for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
         J[i][j] += self->elements_db.gauss_nodes[gauss]->dforms[i][k]* \
           solver_node_dof(self,element,k,j);
     }
@@ -1858,12 +1891,12 @@ shape_gradients* solver_new_shape_gradients(fea_solver* self,
   {
     /* Allocate memory for shape gradients */
     grads = (shape_gradients*)malloc(sizeof(shape_gradients));
-    grads->grad = (real**)malloc(sizeof(real*)*(self->task->dof));
-    row_size = sizeof(real)*(self->fea_params->nodes_per_element);
-    for (i = 0; i < self->task->dof; ++ i)
+    grads->grads = (real**)malloc(sizeof(real*)*(self->task_p->dof));
+    row_size = sizeof(real)*(self->fea_params_p->nodes_per_element);
+    for (i = 0; i < self->task_p->dof; ++ i)
     {
-      grads->grad[i] = (real*)malloc(row_size);
-      memset(grads->grad[i],0,row_size);
+      grads->grads[i] = (real*)malloc(row_size);
+      memset(grads->grads[i],0,row_size);
     }
     /* Store determinant of the Jacobi matrix */
     grads->detJ = detJ;
@@ -1872,9 +1905,9 @@ shape_gradients* solver_new_shape_gradients(fea_solver* self,
     /* [ dN/dy ]  = J^-1 * [ dN/ds ] */
     /* [ dN/dz ]           [ dN/dt ] */
     for ( i = 0; i < MAX_DOF; ++ i)
-      for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+      for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
         for ( k = 0; k < MAX_DOF; ++ k)
-          grads->grad[i][j] += J[i][k]* \
+          grads->grads[i][j] += J[i][k]* \
             self->elements_db.gauss_nodes[gauss]->dforms[k][j];
 #ifdef DUMP_DATA
     /* Dump results */
@@ -1886,14 +1919,15 @@ shape_gradients* solver_new_shape_gradients(fea_solver* self,
 }
 
 /* Destructor for the shape gradients array */
-void solver_free_shape_gradients(fea_solver* self,shape_gradients* grads)
+void solver_free_shape_gradients(fea_solver_ptr self,
+                                 shape_gradients_ptr grads)
 {
   int i;
   /* for (i = 0; i < self->fea_params->nodes_per_element; ++ i */
-  for (i = 0; i < self->task->dof; ++ i)
-    free(grads->grad[i]);
-  free(grads->grad);
-  grads->grad = (real**)0;
+  for (i = 0; i < self->task_p->dof; ++ i)
+    free(grads->grads[i]);
+  free(grads->grads);
+  grads->grads = (real**)0;
   free(grads);
 }
 
@@ -1967,7 +2001,7 @@ void dump_ctensor_asp_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 #endif
 
 
-void solver_local_stiffness(fea_solver* self,int element)
+void solver_local_stiffness(fea_solver_ptr self,int element)
 {
   /* matrix of gradients of shape functions */
   shape_gradients* grads = (shape_gradients*)0;
@@ -1987,7 +2021,7 @@ void solver_local_stiffness(fea_solver* self,int element)
   real ctens[MAX_DOF][MAX_DOF][MAX_DOF][MAX_DOF];
   
   /* allocate memory for a local stiffness matrix */
-  size = self->fea_params->nodes_per_element*self->task->dof;
+  size = self->fea_params_p->nodes_per_element*self->task_p->dof;
   stiff = (real**)malloc(sizeof(real*)*size);
   for (i = 0; i < size; ++ i)
   {
@@ -2002,11 +2036,11 @@ void solver_local_stiffness(fea_solver* self,int element)
   dump_ctensor_asp_matrix(ctens);
 #endif
   
-  dof = self->task->dof;
-  nelem = self->fea_params->nodes_per_element;
+  dof = self->task_p->dof;
+  nelem = self->fea_params_p->nodes_per_element;
   
   /* loop by gauss nodes - numerical integration */
-  for (gauss = 0; gauss < self->fea_params->gauss_nodes_count ; ++ gauss)
+  for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     grads = solver_new_shape_gradients(self,element,gauss);
     if (grads)
@@ -2029,7 +2063,7 @@ void solver_local_stiffness(fea_solver* self,int element)
               /* sum of particular derivatives and components of C tensor */
               for (k = 0; k < dof; ++ k)
                 for (l = 0; l < dof; ++ l)
-                  sum+=grads->grad[k][a]*ctens[i][k][j][l]*grads->grad[l][b];
+                  sum+=grads->grads[k][a]*ctens[i][k][j][l]*grads->grads[l][b];
               /*
                * multiply by volume of an element = det(J)
                * where divider 6 or 2 or others already accounted in
@@ -2041,8 +2075,8 @@ void solver_local_stiffness(fea_solver* self,int element)
               /* append to the local stiffness */
               stiff[I][J] += sum;
               /* finally distribute to the global matrix */
-              globalI = self->elements->elements[element][a]*dof + i;
-              globalJ = self->elements->elements[element][b]*dof + j;
+              globalI = self->elements_p->elements[element][a]*dof + i;
+              globalJ = self->elements_p->elements[element][b]*dof + j;
               sp_matrix_element_add(&self->global_mtx,
                                      globalI,
                                      globalJ,
@@ -2065,14 +2099,14 @@ void solver_local_stiffness(fea_solver* self,int element)
 
 
 
-void solver_ctensor(fea_solver* self,
+void solver_ctensor(fea_solver_ptr self,
                     real (*graddef)[MAX_DOF],
                     real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
   int i,j,k,l;
   real lambda,mu;
-  lambda = self->task->model.parameters[0];
-  mu = self->task->model.parameters[1];
+  lambda = self->task_p->model.parameters[0];
+  mu = self->task_p->model.parameters[1];
   for ( i = 0; i < MAX_DOF; ++ i )
     for ( j = 0; j < MAX_DOF; ++ j )
       for ( k = 0; k < MAX_DOF; ++ k )
@@ -2083,45 +2117,45 @@ void solver_ctensor(fea_solver* self,
             + mu * DELTA (i, l) * DELTA (j, k);
 }
 
-void solver_create_forces_bc(fea_solver* self)
+void solver_create_forces_bc(fea_solver_ptr self)
 {
   /* TODO: implement this */
   /* solver->global_forces_vct */
 }
 
-void solver_apply_prescribed_bc(fea_solver* self)
+void solver_apply_prescribed_bc(fea_solver_ptr self)
 {
   int i;
   int type,index,offset,node_number;
   real presc[3];
-  for ( i =0; i < self->presc_boundary->prescribed_nodes_count; ++ i)
+  for ( i =0; i < self->presc_boundary_p->prescribed_nodes_count; ++ i)
   {
-    node_number = self->presc_boundary->prescribed_nodes[i].node_number;
+    node_number = self->presc_boundary_p->prescribed_nodes[i].node_number;
     memcpy(presc,
-           self->presc_boundary->prescribed_nodes[i].values,
-           sizeof(real)*self->task->dof);
-    type = self->presc_boundary->prescribed_nodes[i].type;
+           self->presc_boundary_p->prescribed_nodes[i].values,
+           sizeof(real)*self->task_p->dof);
+    type = self->presc_boundary_p->prescribed_nodes[i].type;
 
     /* set the index offset depending on condition type */
     if ( type == PRESCRIBEDX || type == PRESCRIBEDXY || 
          type == PRESCRIBEDXZ || type == PRESCRIBEDXYZ )
     {
       offset = 0;
-      index = node_number*self->task->dof+offset;
+      index = node_number*self->task_p->dof+offset;
       solver_apply_single_bc(self, index, presc[offset]);
     }
     if ( type == PRESCRIBEDY || type == PRESCRIBEDXY || 
          type == PRESCRIBEDYZ || type == PRESCRIBEDXYZ )
     {
       offset = 1;
-      index = node_number*self->task->dof+offset;
+      index = node_number*self->task_p->dof+offset;
       solver_apply_single_bc(self, index, presc[offset]);
     }
     if ( type == PRESCRIBEDZ || type == PRESCRIBEDXZ || 
          type == PRESCRIBEDYZ || type == PRESCRIBEDXYZ )
     {
       offset = 2;
-      index = node_number*self->task->dof+offset;
+      index = node_number*self->task_p->dof+offset;
       solver_apply_single_bc(self, index, presc[offset]);
     }
   }
@@ -2130,7 +2164,7 @@ void solver_apply_prescribed_bc(fea_solver* self)
   /*   printf("%f\n",self->global_forces_vct[i]); */
 }
 
-void solver_apply_single_bc(fea_solver* self, int index, real presc)
+void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
 {
   real *pvalue,*pvalue1,value;
   int size = self->global_mtx.rows_count;
@@ -2160,19 +2194,17 @@ void solver_apply_single_bc(fea_solver* self, int index, real presc)
   self->global_forces_vct[index] = value*presc;
 }
 
-
-void solver_apply_single_bc2(fea_solver* self, int index, real presc)
+void solver_update_nodes_with_displacements(fea_solver_ptr self,
+                                                   real* x)
 {
-  real *pvalue,new_value;
-  real Alpha = 1e8;
-
-  pvalue = sp_matrix_element(&self->global_mtx,index,index);
-  assert(pvalue);             /* global matrix always shall have
-                               * nonzero diagonal elements */
-  new_value = *pvalue*Alpha;
-  *pvalue = new_value;
-  self->global_forces_vct[index] = new_value*presc;
+  int i,j;
+  for ( i = 0; i < self->nodes_p->nodes_count; ++ i)
+  {
+    for ( j = 0; j < self->task_p->dof; ++ j)
+      self->nodes_p->nodes[i][j] += x[i*self->task_p->dof + j];
+  }
 }
+
 
 
 
@@ -2290,7 +2322,7 @@ real tetrahedra10_disoform(int shape,int dof,real r,real s,real t)
   return 0;
 }
 
-void solver_export_tetrahedra10_gmsh(fea_solver* solver, char *filename)
+void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
 {
   FILE* f;
   int i,j;
@@ -2305,21 +2337,21 @@ void solver_export_tetrahedra10_gmsh(fea_solver* solver, char *filename)
     /* Geometry */
     /* Nodes section */
     fprintf(f,"$Nodes\n");
-    fprintf(f,"%d\n",solver->nodes->nodes_count);
-    for (i = 0; i < solver->nodes->nodes_count; ++ i)
+    fprintf(f,"%d\n",solver->nodes_p->nodes_count);
+    for (i = 0; i < solver->nodes_p->nodes_count; ++ i)
       fprintf(f,"%d %f %f %f\n",i+1,
-              solver->nodes->nodes[i][0],
-              solver->nodes->nodes[i][1],
-              solver->nodes->nodes[i][2]);
+              solver->nodes_p->nodes[i][0],
+              solver->nodes_p->nodes[i][1],
+              solver->nodes_p->nodes[i][2]);
     fprintf(f,"$EndNodes\n");
     /* Elements section */
     fprintf(f,"$Elements\n");
-    fprintf(f,"%d\n", solver->elements->elements_count);
-    for (i = 0; i < solver->elements->elements_count; ++ i)
+    fprintf(f,"%d\n", solver->elements_p->elements_count);
+    for (i = 0; i < solver->elements_p->elements_count; ++ i)
     {
       fprintf(f,"%d 11 3 1 1 1 ",i+1);
       for (j = 0; j < 10; ++ j)
-        fprintf(f,"%d ",solver->elements->elements[i][j]+1);
+        fprintf(f,"%d ",solver->elements_p->elements[i][j]+1);
       fprintf(f,"\n");
     }
     fprintf(f,"$EndElements\n");
@@ -2333,7 +2365,7 @@ void solver_create_element_params_tetrahedra10(fea_solver* solver)
 {
   solver->shape = tetrahedra10_isoform;
   solver->dshape = tetrahedra10_disoform;
-  switch (solver->fea_params->gauss_nodes_count)
+  switch (solver->fea_params_p->gauss_nodes_count)
   {
   case 4:
     solver->elements_db.gauss_nodes_data = gauss_nodes4_tetr10;
@@ -2346,10 +2378,10 @@ void solver_create_element_params_tetrahedra10(fea_solver* solver)
 }
 
 
-static fea_task* new_fea_task()
+fea_task_ptr new_fea_task()
 {
   /* allocate memory */
-  fea_task *task = (fea_task *)malloc(sizeof(fea_task));
+  fea_task_ptr task = (fea_task_ptr)malloc(sizeof(fea_task));
   /* set default values */
   task->desired_tolerance = 1e-8;
   task->dof = 3;
@@ -2366,16 +2398,16 @@ static fea_task* new_fea_task()
   return task;
 }
 
-static void free_fea_task(fea_task* task)
+void free_fea_task(fea_task_ptr task)
 {
   free(task);
 }
 
 /* Initializes fea solution params with default values */
-static fea_solution_params* new_fea_solution_params()
+fea_solution_params_ptr new_fea_solution_params()
 {
   /* allocate memory */
-  fea_solution_params *fea_params = (fea_solution_params *)
+  fea_solution_params_ptr fea_params = (fea_solution_params_ptr)
     malloc(sizeof(fea_solution_params));
   /* set default values */
   fea_params->gauss_nodes_count = 5;
@@ -2384,24 +2416,45 @@ static fea_solution_params* new_fea_solution_params()
 }
 
 /* clear fea solution params */
-static void free_fea_solution_params(fea_solution_params* params)
+void free_fea_solution_params(fea_solution_params_ptr params)
 {
   free(params);
 }
 
 /* Initialize nodes array but not initialize particular arrays  */
-static nodes_array* new_nodes_array()
+nodes_array_ptr new_nodes_array()
 {
   /* allocate memory */
-  nodes_array *nodes = (nodes_array*)malloc(sizeof(nodes_array));
+  nodes_array_ptr nodes = (nodes_array_ptr)malloc(sizeof(nodes_array));
   /* set zero values */
   nodes->nodes = (real**)0;
   nodes->nodes_count = 0;
   return nodes;
 }
 
+nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes)
+{
+  int i;
+  /* allocate memory */
+  nodes_array_ptr copy = (nodes_array_ptr)malloc(sizeof(nodes_array));
+  /* set zero values */
+  copy->nodes = (real**)0;
+  copy->nodes_count = nodes->nodes_count;
+  /* copy nodes */
+  if ( nodes->nodes_count && nodes->nodes)
+  {
+    copy->nodes = malloc(sizeof(real*)*copy->nodes_count);
+    for ( i = 0; i < copy->nodes_count; ++ i)
+    {
+      copy->nodes[i] = malloc(sizeof(real)*MAX_DOF);
+      memcpy(copy->nodes[i],nodes->nodes[i],sizeof(real)*MAX_DOF);
+    }
+  }
+  return copy;
+}
+
 /* carefully deallocate nodes array */
-static void free_nodes_array(nodes_array* nodes)
+void free_nodes_array(nodes_array_ptr nodes)
 {
   int counter = 0;
   if (nodes)
@@ -2418,17 +2471,18 @@ static void free_nodes_array(nodes_array* nodes)
 
 
 /* Initialize elements array but not initialize particular elements */
-static elements_array* new_elements_array()
+elements_array_ptr new_elements_array()
 {
   /* allocate memory */
-  elements_array *elements = (elements_array*)malloc(sizeof(elements_array));
+  elements_array_ptr elements = (elements_array_ptr)
+    malloc(sizeof(elements_array));
   /* set zero values */
   elements->elements = (int**)0;
   elements->elements_count = 0;
   return elements;
 }
 
-static void free_elements_array(elements_array *elements)
+void free_elements_array(elements_array_ptr elements)
 {
   if(elements)
   {
@@ -2444,18 +2498,18 @@ static void free_elements_array(elements_array *elements)
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
-static prescribed_boundary_array* new_prescribed_boundary_array()
+presc_boundary_array_ptr new_presc_boundary_array()
 {
   /* allocate memory */
-  prescribed_boundary_array *presc_boundary = (prescribed_boundary_array*)
-    malloc(sizeof(prescribed_boundary_array));
+  presc_boundary_array_ptr presc_boundary =
+    malloc(sizeof(presc_boundary_array));
   /* set zero values */
   presc_boundary->prescribed_nodes = (prescibed_boundary_node*)0;
   presc_boundary->prescribed_nodes_count = 0;
   return presc_boundary;
 }
 
-static void free_prescribed_boundary_array(prescribed_boundary_array* presc)
+void free_presc_boundary_array(presc_boundary_array_ptr presc)
 {
   if (presc)
   {
@@ -2623,7 +2677,7 @@ typedef struct parse_data_tag {
   fea_solution_params *fea_params;
   nodes_array *nodes;
   elements_array *elements;
-  prescribed_boundary_array *presc_boundary;
+  presc_boundary_array *presc_boundary;
   index_stack stack;
   xml_format_tags parent_tag;
   char* current_text;
@@ -2730,7 +2784,7 @@ static BOOL expat_data_load(char *filename,
                             fea_solution_params **fea_params,
                             nodes_array **nodes,
                             elements_array **elements,
-                            prescribed_boundary_array **presc_boundary)
+                            presc_boundary_array **presc_boundary)
 {
   BOOL result = FALSE;
   FILE* xml_document_file;
@@ -2782,7 +2836,7 @@ static BOOL expat_data_load(char *filename,
   parse.fea_params = new_fea_solution_params();
   parse.nodes = new_nodes_array();
   parse.elements = new_elements_array();
-  parse.presc_boundary = new_prescribed_boundary_array();
+  parse.presc_boundary = new_presc_boundary_array();
   index_stack_init(&parse.stack);
   parse.current_size = 0;
   parse.current_text = (char*)0;
@@ -3184,7 +3238,7 @@ void process_prescribed_node(parse_data* data, const XML_Char **atts)
       {
         text = trim_whitespaces(*atts,strlen(*atts));
         /* TODO: add proper conversion */
-        node.type= (prescribed_boundary_type)atoi(text);
+        node.type= (presc_boundary_type)atoi(text);
         if (text) free(text);
       }
     }
@@ -3294,11 +3348,11 @@ void process_end_tag(parse_data* data, int tag)
 
 
 BOOL initial_data_load(char *filename,
-                       fea_task **task,
-                       fea_solution_params **fea_params,
-                       nodes_array **nodes,
-                       elements_array **elements,
-                       prescribed_boundary_array **presc_boundary)
+                       fea_task_ptr *task,
+                       fea_solution_params_ptr *fea_params,
+                       nodes_array_ptr *nodes,
+                       elements_array_ptr *elements,
+                       presc_boundary_array_ptr *presc_boundary)
 {
   BOOL result = FALSE;
 #ifdef USE_EXPAT
