@@ -1,3 +1,4 @@
+/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,6 +123,7 @@ typedef enum element_type_enum {
   /* TRIANGLE3, TRIANGLE6,TETRAHEDRA4, */
   TETRAHEDRA10
 } element_type;
+
 
 typedef enum presc_boundary_type_enum {
   FREE = 0,                    /* free */
@@ -1280,6 +1282,9 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
    * Taken from the book:
    * Saad Y. Iterative methods for sparse linear systems (2ed., 2000)
    * page 246
+   *
+   * Preconditioner: Incomplete LU decomposition (ILU)
+   * M = L*U, A = M-R
    */
 
   /* variables */
@@ -1311,11 +1316,15 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
   /* assuming self is already reordered */
   /* initialize skyline matrix for ILU decomposition */
   init_sp_matrix_skyline(&A,self);
+#ifdef DUMP_DATA
+  sp_matrix_skyline_dump(&A);
+#endif
   /*
    * create ILU decomposition of the sparse matrix in skyline format
    * taking ownership of the skyline A matrix
    */
   init_copy_sp_matrix_skyline_ilu(&ILU,&A);
+
   
   /* clear vectors */
   memset(r,0,size);
@@ -1611,35 +1620,38 @@ void sp_matrix_dump(sp_matrix_ptr self)
 }
 
 
-
 void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self)
 {
   int i;
+  FILE* f;
+  if ((f = fopen("global_matrix_skyline.txt","w+")))
+  {
+    fprintf(f,"adiag = [");
+    for ( i = 0; i < self->rows_count; ++ i )
+      fprintf(f,"%f ",self->diag[i]);
+    fprintf(f,"]\n");
+
+    fprintf(f,"altr = [");
+    for ( i = 0; i < self->tr_nonzeros; ++ i )
+      fprintf(f,"%f ",self->lower_triangle[i]);
+    fprintf(f,"]\n");
+
+    fprintf(f,"autr = [");
+    for ( i = 0; i < self->tr_nonzeros; ++ i )
+      fprintf(f,"%f ",self->upper_triangle[i]);
+    fprintf(f,"]\n");
   
-  printf("adiag = [");
-  for ( i = 0; i < self->rows_count; ++ i )
-    printf("%.1f ",self->diag[i]);
-  printf("]\n");
+    fprintf(f,"jptr = [");
+    for ( i = 0; i < self->tr_nonzeros; ++ i )
+      fprintf(f,"%d ",self->jptr[i]+1);
+    fprintf(f,"]\n");
 
-  printf("altr = [");
-  for ( i = 0; i < self->tr_nonzeros; ++ i )
-    printf("%.1f ",self->lower_triangle[i]);
-  printf("]\n");
-
-  printf("autr = [");
-  for ( i = 0; i < self->tr_nonzeros; ++ i )
-    printf("%.1f ",self->upper_triangle[i]);
-  printf("]\n");
-  
-  printf("jptr = [");
-  for ( i = 0; i < self->tr_nonzeros; ++ i )
-    printf("%d ",self->jptr[i]+1);
-  printf("]\n");
-
-  printf("iptr = [");
-  for ( i = 0; i < self->tr_nonzeros-1; ++ i )
-    printf("%d ",self->iptr[i]+1);
-  printf("]\n");
+    fprintf(f,"iptr = [");
+    for ( i = 0; i < self->rows_count; ++ i )
+      fprintf(f,"%d ",self->iptr[i]+1);
+    fprintf(f,"]\n");
+    fclose(f);
+  }
 }
 #endif
 
@@ -1701,10 +1713,10 @@ void free_fea_solver(fea_solver_ptr solver)
  * Creates a particular gauss node for the element
  * with index element_index and gauss node number gauss_node_index
  */
-static gauss_node *solver_new_gauss_node(fea_solver* self,
-                                         int gauss_node_index)
+static gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
+                                            int gauss_node_index)
 {
-  gauss_node* node = (gauss_node*)0;
+  gauss_node_ptr node = (gauss_node_ptr)0;
   int i,j;
   real r,s,t;
   /* Check for array bounds*/
@@ -1734,8 +1746,8 @@ static gauss_node *solver_new_gauss_node(fea_solver* self,
 }
 
 /* Deallocate gauss node */
-static void solver_free_gauss_node(fea_solver *self,
-                                   gauss_node *node)
+static void solver_free_gauss_node(fea_solver_ptr self,
+                                   gauss_node_ptr node)
 {
   int i;
   if (node)
@@ -1751,7 +1763,7 @@ static void solver_free_gauss_node(fea_solver *self,
 }
   
 
-void solver_create_element_database(fea_solver* self)
+void solver_create_element_database(fea_solver_ptr self)
 {
   int gauss;
   int gauss_count = self->fea_params_p->gauss_nodes_count;
@@ -1801,7 +1813,7 @@ void solver_create_element_params(fea_solver_ptr solver)
   
 }
 #ifdef DUMP_DATA
-static void solver_dump_shape_gradients(fea_solver* self,
+static void solver_dump_shape_gradients(fea_solver_ptr self,
                                         shape_gradients* grads,
                                         int element,
                                         int gauss,
@@ -1812,13 +1824,14 @@ static void solver_dump_shape_gradients(fea_solver* self,
   if ((f = fopen("gradients.txt","w+")))
   {
     fprintf(f,"\nElement %d:\n",element);
-    for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
-      fprintf(f,"%d ",self->elements->elements[element][j]);
+    for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
+      fprintf(f,"%d ",self->elements_p->elements[element][j]);
     fprintf(f,"\nNodes:\n");
-    for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
+    for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
     {
       for ( i = 0; i < MAX_DOF; ++ i)
-        fprintf(f,"%f ",self->nodes->nodes[self->elements->elements[element][j]][i]);
+        fprintf(f,"%f ",
+                self->nodes_p->nodes[self->elements_p->elements[element][j]][i]);
       fprintf(f,"\n");
     }
     fprintf(f,"\nGauss node %d:\n",gauss);
@@ -1836,8 +1849,8 @@ static void solver_dump_shape_gradients(fea_solver* self,
     fprintf(f,"\nMatrix of gradients:\n");
     for ( i = 0; i < MAX_DOF; ++ i)
     {
-      for ( j = 0; j < self->fea_params->nodes_per_element; ++ j)
-        fprintf(f,"%.5f ",grads->grad[i][j]);
+      for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
+        fprintf(f,"%.5f ",grads->grads[i][j]);
       fprintf(f,"\n");
     }
     fclose(f);
@@ -1888,7 +1901,7 @@ shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
   if (inv3x3(J,&detJ))                /* inverse exists */
   {
     /* Allocate memory for shape gradients */
-    grads = (shape_gradients*)malloc(sizeof(shape_gradients));
+    grads = (shape_gradients_ptr)malloc(sizeof(shape_gradients));
     grads->grads = (real**)malloc(sizeof(real*)*(self->task_p->dof));
     row_size = sizeof(real)*(self->fea_params_p->nodes_per_element);
     for (i = 0; i < self->task_p->dof; ++ i)
@@ -1935,7 +1948,7 @@ void solver_dump_local_stiffness(fea_solver* self,real **stiff,int el)
   int i,j;
   FILE* f;
   char fname[50];
-  int size = self->fea_params->nodes_per_element*self->task->dof;
+  int size = self->fea_params_p->nodes_per_element*self->task_p->dof;
   sprintf(fname,"elements/K%d.txt",el);
   if ((f = fopen(fname,"w+")))
   {
@@ -2002,7 +2015,7 @@ void dump_ctensor_asp_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 void solver_local_stiffness(fea_solver_ptr self,int element)
 {
   /* matrix of gradients of shape functions */
-  shape_gradients* grads = (shape_gradients*)0;
+  shape_gradients_ptr grads = (shape_gradients_ptr)0;
   int gauss,a,b,i,j,k,l,I,J,globalI,globalJ;
   real sum;
   /* size of a local stiffness matrix */
