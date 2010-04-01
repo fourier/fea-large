@@ -73,6 +73,12 @@ typedef real (*disoform_t)(int shape,int dof,real r,real s,real t);
 typedef void (*export_solution_t) (fea_solver_ptr, char *filename);
 
 /*
+ * A pointer to the function for appling single BC for global
+ * DOF[index], using argument arg
+ */
+typedef void (*apply_bc_t) (fea_solver_ptr self, int index, real arg);
+
+/*
  * arrays of gauss nodes with coefficients                   
  * layout: [number_of_nodes x 4], with values:               
  * {weight, r,s,t}                                           
@@ -631,7 +637,8 @@ void solve(fea_task_ptr ask,
 
 #ifdef DUMP_DATA
 /* Dump input data to check if parser works correctly */
-void dump_input_data( fea_task_ptr task,
+void dump_input_data( char* filename,
+                      fea_task_ptr task,
                       fea_solution_params_ptr fea_params,
                       nodes_array_ptr nodes,
                       elements_array_ptr elements,
@@ -707,8 +714,22 @@ static void solver_element_gauss_stress(fea_solver_ptr self,
 /* Fill greate global forces vector */
 static void solver_create_forces_bc(fea_solver_ptr self);
 
-/* Apply BC in form of prescribed displacements */
-static void solver_apply_prescribed_bc(fea_solver_ptr self);
+/* Replace global forces vector with residual forces */
+static void solver_create_residual_forces(fea_solver_ptr self);
+
+/*
+ * Apply BC in form of prescribed displacements
+ * lambda - multiplier for the prescribed displacements
+ */
+static void solver_apply_prescribed_bc(fea_solver_ptr self,real lambda);
+
+/*
+ * Call the 'apply' function for every prescribed displacement
+ * with an argument lambda
+ */
+static void solver_apply_bc_general(fea_solver_ptr self,
+                                    apply_bc_t apply,
+                                    real lambda);
 
 /* Apply BC in form of prescribed displacements to a single specified
  * global d.o.f.
@@ -716,14 +737,29 @@ static void solver_apply_prescribed_bc(fea_solver_ptr self);
  */
 static void solver_apply_single_bc(fea_solver_ptr self,
                                    int index, real value);
+
+/* Add BC in form of prescribed displacements to a single specified
+ * global d.o.f. of a global nodes vector
+ * This function is called from solver_update_nodes_with_bc */
+static void solver_update_node_with_bc(fea_solver_ptr self,
+                                       int index,
+                                       real value);
+
 /*
  * Update array solver->nodes with displacements from vector x
  * This function may be used for:
  * 1) calculation of the deformation gradients
  * 2) create deformed configuration by applying prescribed displacements
  */
-static void solver_update_nodes_with_displacements(fea_solver_ptr self,
+static void solver_update_nodes_with_solution(fea_solver_ptr self,
                                                    real* x);
+
+/*
+ * Update solver->nodes array with prescribed displacements
+ * lambda - multipler for prescribed displacements
+ */
+static void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda);
+
 
 /*************************************************************/
 /* Auxulary functions                                        */
@@ -800,12 +836,11 @@ void solve( fea_task_ptr task,
 {
   /* initialize variables */
   fea_solver_ptr solver = (fea_solver_ptr)0;
-  int i;
-  FILE *f;  
+  int el,it;
 #ifdef DUMP_DATA
-
+  FILE *f;  
   /* Dump all data in debug version */
-  dump_input_data(task,fea_params,nodes,elements,presc_boundary);
+  dump_input_data("input.txt",task,fea_params,nodes,elements,presc_boundary);
 #endif
   /* Prepare solver instance */
   solver = new_fea_solver(task,
@@ -813,6 +848,11 @@ void solve( fea_task_ptr task,
                           nodes,
                           elements,
                           presc_boundary);
+#ifdef DUMP_DATA
+  solver_update_nodes_with_bc(solver, 1);
+  dump_input_data("input1.txt",task,fea_params,solver->nodes_p,elements,presc_boundary);
+#endif
+  
   /* backup solver to the global_solver for the case of emergency exit */
   global_solver = solver;
 
@@ -820,16 +860,21 @@ void solve( fea_task_ptr task,
   solver_create_element_database(solver);
 
   /* Create a global stiffness matrix */
+
+  /* loop by load iterations */
+  /* for (it = 0; it < solver->task_p->load_increments_count; ++ it) */
+  /* { */
+  /*   solver_update_nodes_with_solution(solver,solver->global_solution_vct); */
   
   /* loop by elements - create local stiffnesses and redistribute them
    * in the global stiffness matrix */
-  for ( i = 0; i < solver->elements_p->elements_count; ++ i)
-    solver_local_stiffness(solver,i);
+  for ( el = 0; el < solver->elements_p->elements_count; ++ el)
+    solver_local_stiffness(solver,el);
 
   /* fill the external forces vector */
   solver_create_forces_bc(solver);
   /* apply prescribed boundary conditions */
-  solver_apply_prescribed_bc(solver);
+  solver_apply_prescribed_bc(solver,1);
 
 #ifdef DUMP_DATA
   sp_matrix_dump(&solver->global_mtx);
@@ -839,15 +884,19 @@ void solve( fea_task_ptr task,
                   solver->global_forces_vct,
                   solver->global_solution_vct);
 
+
+  
+#ifdef DUMP_DATA
   f = fopen("solution.txt","w+");
-  for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
-    fprintf(f,"%f\n",solver->global_solution_vct[i]);
+  for ( it = 0; it < solver->global_mtx.rows_count; ++ it)
+    fprintf(f,"%f\n",solver->global_solution_vct[it]);
   fclose(f);
-
+#endif
+  
   /* update nodes array with solution */
-  solver_update_nodes_with_displacements(solver,solver->global_solution_vct);
+  solver_update_nodes_with_solution(solver,solver->global_solution_vct);
   solver->export(solver,"deformed.msh");
-
+  /* } */
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
 }
@@ -865,7 +914,8 @@ int parse_cmdargs(int argc, char **argv,char **filename)
 }
 
 #ifdef DUMP_DATA
-void dump_input_data( fea_task_ptr task,
+void dump_input_data( char* filename,
+                      fea_task_ptr task,
                       fea_solution_params_ptr fea_params,
                       nodes_array_ptr nodes,
                       elements_array_ptr elements,
@@ -873,7 +923,7 @@ void dump_input_data( fea_task_ptr task,
 {
   int i,j;
   FILE *f;
-  if ((f = fopen("input_data.txt","w+")))
+  if ((f = fopen(filename,"w+")))
   {
     fprintf(f,"nodes\n");
     for ( i = 0; i < nodes->nodes_count; ++ i)
@@ -2177,6 +2227,13 @@ void solver_local_stiffness(fea_solver_ptr self,int element)
   free(stiff);
 }
 
+
+void solver_create_residual_forces(fea_solver_ptr self)
+{
+  
+}
+
+
 #define BONET_DEFGRADIENT
 void solver_element_gauss_graddef(fea_solver_ptr self,
                                   int element,
@@ -2309,24 +2366,28 @@ void solver_ctensor(fea_solver_ptr self,
             + mu * DELTA (i, k) * DELTA (j, l)    \
             + mu * DELTA (i, l) * DELTA (j, k);
 }
-
 void solver_create_forces_bc(fea_solver_ptr self)
 {
   /* TODO: implement this */
   /* solver->global_forces_vct */
 }
 
-void solver_apply_prescribed_bc(fea_solver_ptr self)
+void solver_apply_prescribed_bc(fea_solver_ptr self, real lambda)
 {
-  int i;
+  solver_apply_bc_general(self,solver_apply_single_bc,lambda);
+}
+
+void solver_apply_bc_general(fea_solver_ptr self,apply_bc_t apply,real lambda)
+{
+  int i,j;
   int type,index,offset,node_number;
-  real presc[3];
+  real presc[MAX_DOF];
   for ( i =0; i < self->presc_boundary_p->prescribed_nodes_count; ++ i)
   {
     node_number = self->presc_boundary_p->prescribed_nodes[i].node_number;
-    memcpy(presc,
-           self->presc_boundary_p->prescribed_nodes[i].values,
-           sizeof(real)*self->task_p->dof);
+    for ( j = 0; j < MAX_DOF; ++ j)
+     presc[j] = self->presc_boundary_p->prescribed_nodes[i].values[j]*lambda;
+    
     type = self->presc_boundary_p->prescribed_nodes[i].type;
 
     /* set the index offset depending on condition type */
@@ -2335,26 +2396,24 @@ void solver_apply_prescribed_bc(fea_solver_ptr self)
     {
       offset = 0;
       index = node_number*self->task_p->dof+offset;
-      solver_apply_single_bc(self, index, presc[offset]);
+      apply(self, index, presc[offset]);
     }
     if ( type == PRESCRIBEDY || type == PRESCRIBEDXY || 
          type == PRESCRIBEDYZ || type == PRESCRIBEDXYZ )
     {
       offset = 1;
       index = node_number*self->task_p->dof+offset;
-      solver_apply_single_bc(self, index, presc[offset]);
+      apply(self, index, presc[offset]);
     }
     if ( type == PRESCRIBEDZ || type == PRESCRIBEDXZ || 
          type == PRESCRIBEDYZ || type == PRESCRIBEDXYZ )
     {
       offset = 2;
       index = node_number*self->task_p->dof+offset;
-      solver_apply_single_bc(self, index, presc[offset]);
+      apply(self, index, presc[offset]);
     }
   }
 
-  /* for (i = 0; i < self->global_mtx.rows_count; ++ i) */
-  /*   printf("%f\n",self->global_forces_vct[i]); */
 }
 
 void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
@@ -2387,8 +2446,19 @@ void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
   self->global_forces_vct[index] = value*presc;
 }
 
-void solver_update_nodes_with_displacements(fea_solver_ptr self,
-                                                   real* x)
+void solver_update_node_with_bc(fea_solver_ptr self,
+                                int index,
+                                real value)
+{
+  int i = index / self->task_p->dof;
+  int j = index % self->task_p->dof;
+  self->nodes_p->nodes[i][j] += value;
+}
+
+
+
+void solver_update_nodes_with_solution(fea_solver_ptr self,
+                                       real* x)
 {
   int i,j;
   for ( i = 0; i < self->nodes_p->nodes_count; ++ i)
@@ -2398,7 +2468,10 @@ void solver_update_nodes_with_displacements(fea_solver_ptr self,
   }
 }
 
-
+void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda)
+{
+  solver_apply_bc_general(self,solver_update_node_with_bc,lambda) ;
+}
 
 
 /* function for calculation value of shape function for 10-noded
