@@ -264,6 +264,11 @@ typedef struct shape_gradients_tag {
 } shape_gradients;
 typedef shape_gradients* shape_gradients_ptr;
 
+/* A storage to keep 2nd rank tensor components  */
+typedef struct tensor_tag {
+  real components[MAX_DOF][MAX_DOF];
+} tensor;
+typedef tensor* tensor_ptr;
 
 /*
  * Sparse matrix row/column storage array
@@ -342,6 +347,11 @@ typedef struct fea_solver_tag {
                                           * per gauss node
                                           * [number of elems] x [gauss nodes]
                                           */
+  tensor **stresses;            /* Components of Cauchy stress tensor
+                                 * in gauss nodes
+                                 * array [number of elems] x [gauss nodes]
+                                 */
+  
   disoform_t dshape;              /* a function pointer to derivative of the
                                    * shape function */
   isoform_t shape;                /* a function pointer to the shape
@@ -682,8 +692,24 @@ static real solver_node_dof(fea_solver_ptr self,
 }
 
 
+/*
+ * Create an array of shape functions gradients
+ * in gauss nodes per elements
+ */
+static void solver_create_shape_gradients(fea_solver_ptr self);
+
+/* Create components of the Cauchy stresses in gauss nodes  */
+static void solver_create_stresses(fea_solver_ptr self);
+
+
+/* Update global forces vector with residual forces for the element */
+static void solver_create_residual_forces(fea_solver_ptr self,int element);
+
 /* Create and distribute local stiffness matrix for the element */
 static void solver_local_stiffness(fea_solver_ptr self,int element);
+
+
+
 
 /*
  * Calculate Deformation gradient in gauss node
@@ -713,9 +739,6 @@ static void solver_element_gauss_stress(fea_solver_ptr self,
 
 /* Fill greate global forces vector */
 static void solver_create_forces_bc(fea_solver_ptr self);
-
-/* Replace global forces vector with residual forces */
-static void solver_create_residual_forces(fea_solver_ptr self);
 
 /*
  * Apply BC in form of prescribed displacements
@@ -849,8 +872,8 @@ void solve( fea_task_ptr task,
                           elements,
                           presc_boundary);
 #ifdef DUMP_DATA
-  solver_update_nodes_with_bc(solver, 1);
-  dump_input_data("input1.txt",task,fea_params,solver->nodes_p,elements,presc_boundary);
+  /* solver_update_nodes_with_bc(solver, 1); */
+  /* dump_input_data("input1.txt",task,fea_params,solver->nodes_p,elements,presc_boundary); */
 #endif
   
   /* backup solver to the global_solver for the case of emergency exit */
@@ -858,7 +881,11 @@ void solve( fea_task_ptr task,
 
   /* Create elements database */
   solver_create_element_database(solver);
+  /* Create an array of shape functions gradients */
+  solver_create_shape_gradients(solver);
 
+  solver_create_stresses(solver);
+  
   /* Create a global stiffness matrix */
 
   /* loop by load iterations */
@@ -869,7 +896,18 @@ void solve( fea_task_ptr task,
   /* loop by elements - create local stiffnesses and redistribute them
    * in the global stiffness matrix */
   for ( el = 0; el < solver->elements_p->elements_count; ++ el)
+  {
+    solver_create_residual_forces(solver, el);
     solver_local_stiffness(solver,el);
+  }
+#ifdef DUMP_DATA
+  f = fopen("forces.txt","w+");
+  for ( it = 0; it < solver->global_mtx.rows_count; ++ it)
+    fprintf(f,"%e\n",solver->global_forces_vct[it]);
+  fclose(f);
+#endif
+  memset(solver->global_forces_vct,0,
+         solver->global_mtx.rows_count*sizeof(real));
 
   /* fill the external forces vector */
   solver_create_forces_bc(solver);
@@ -1753,7 +1791,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
                            elements_array_ptr elements,
                            presc_boundary_array_ptr prs_boundary)
 {
-  int msize,bandwidth,elnum,gauss_count,i,j;
+  int msize,bandwidth,elnum,gauss_count,i,j,k,l;
   /* Allocate structure */
   fea_solver_ptr solver = malloc(sizeof(fea_solver));
   /* Copy pointers to the solver structure */
@@ -1768,16 +1806,23 @@ fea_solver* new_fea_solver(fea_task_ptr task,
   solver_create_element_params(solver);
 
   /* initialize an array of gradients of shape functions per
-   * element/gauss node */
+   * element/gauss node and array of stresses */
   elnum = elements->elements_count;
   gauss_count = solver->fea_params_p->gauss_nodes_count;
   solver->shape_gradients = malloc(sizeof(shape_gradients_ptr*)*elnum);
+  solver->stresses = malloc(sizeof(tensor*)*elnum);
   for (i = 0; i < elnum; ++ i)
   {
+    solver->stresses[i] = malloc(sizeof(tensor)*gauss_count);
     solver->shape_gradients[i] =
       malloc(sizeof(shape_gradients_ptr)*gauss_count);
     for (j = 0; j < gauss_count; ++ j)
+    {
       solver->shape_gradients[i][j] = (shape_gradients_ptr)0;
+      for ( k = 0; k < MAX_DOF; ++ k)
+        for (l = 0; l < MAX_DOF; ++ l)
+          solver->stresses[i][j].components[k][l] = 0.0;
+    }
   }
   
   /* allocate resources initialize global stiffness matrix */
@@ -1799,7 +1844,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
 void free_fea_solver(fea_solver_ptr solver)
 {
   /* deallocate resources */
-  /* free shape gradients */
+  /* free shape gradients and stresses */
   int elnum = solver->elements_p->elements_count;
   int gauss_count = solver->fea_params_p->gauss_nodes_count;
   int i,j;
@@ -1809,8 +1854,10 @@ void free_fea_solver(fea_solver_ptr solver)
       if (solver->shape_gradients[i][j])
         solver_free_shape_gradients(solver,solver->shape_gradients[i][j]);
     free(solver->shape_gradients[i]);
+    free(solver->stresses[i]);
   }
   free(solver->shape_gradients);
+  free(solver->stresses);
   /* deallocate all other resources */
   solver_free_element_database(solver);
   free_fea_task(solver->task_p);
@@ -1843,10 +1890,12 @@ static gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
     /* set the weight for this gauss node */
     node->weight = self->elements_db.gauss_nodes_data[gauss_node_index][0];
     /* set shape function values and their derivatives for this node */
-    node->forms = malloc(sizeof(real)*(self->fea_params_p->nodes_per_element));
+    node->forms =
+      malloc(sizeof(real)*(self->fea_params_p->nodes_per_element));
     node->dforms = malloc(sizeof(real*)*(self->task_p->dof));
     for ( i = 0; i < self->task_p->dof; ++ i)
-      node->dforms[i] = malloc(sizeof(real)*(self->fea_params_p->nodes_per_element));
+      node->dforms[i] =
+        malloc(sizeof(real)*(self->fea_params_p->nodes_per_element));
     for ( i = 0; i < self->fea_params_p->nodes_per_element; ++ i)
     {
       r = self->elements_db.gauss_nodes_data[gauss_node_index][1];
@@ -2128,6 +2177,59 @@ void dump_ctensor_asp_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 #endif
 
 
+void solver_create_shape_gradients(fea_solver_ptr self)
+{
+  /* prepare an array of shape functions gradients in
+   * gauss nodes per element */
+  shape_gradients_ptr grads = (shape_gradients_ptr)0;
+  int gauss,element;
+  /* loop by elements */
+  for ( element = 0;
+        element < self->elements_p->elements_count;
+        ++ element)
+  {
+    /* loop by gauss nodes per element */
+    for (gauss = 0;
+         gauss < self->fea_params_p->gauss_nodes_count;
+         ++ gauss)
+    {
+      /* create shape gradients */
+      grads = solver_new_shape_gradients(self,element,gauss);
+      if (grads)
+      {
+        /* free previous shape gradients array */
+        if ( self->shape_gradients[element][gauss] )
+          solver_free_shape_gradients(self,
+                                      self->shape_gradients[element][gauss]);
+        self->shape_gradients[element][gauss] = grads;
+      }
+    }
+  }
+}
+
+void solver_create_stresses(fea_solver_ptr self)
+{
+    /* prepare an array of shape functions gradients in
+   * gauss nodes per element */
+  shape_gradients_ptr grads = (shape_gradients_ptr)0;
+  int gauss,el;
+  /* loop by elements */
+  for ( el = 0;
+        el < self->elements_p->elements_count;
+        ++ el)
+  {
+    /* loop by gauss nodes per element */
+    for (gauss = 0;
+         gauss < self->fea_params_p->gauss_nodes_count;
+         ++ gauss)
+    {
+      solver_element_gauss_stress(self, el, gauss,
+                                  self->stresses[el][gauss].components);
+    }
+  }
+}
+
+
 void solver_local_stiffness(fea_solver_ptr self,int element)
 {
   /* matrix of gradients of shape functions */
@@ -2169,17 +2271,17 @@ void solver_local_stiffness(fea_solver_ptr self,int element)
   /* loop by gauss nodes - numerical integration */
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
-    grads = solver_new_shape_gradients(self,element,gauss);
+    grads = self->shape_gradients[element][gauss];
     if (grads)
     {
       /* Construct components of stiffness matrix in
        * indical form using Bonet & Wood 7.35 p.207, 1st edition */
       
-      /* loop for nodes */
+      /* loop by nodes */
       for ( a = 0; a < nelem; ++ a)
         for (b = 0; b < nelem; ++ b)
         {
-          /* loop for d.o.f in a stiffness matrix block [K_{ab}]ij, 3x3 */
+          /* loop by d.o.f in a stiffness matrix block [K_{ab}]ij, 3x3 */
           for (i = 0; i < dof; ++ i)
             for (j = 0; j < dof; ++ j)
             {
@@ -2212,9 +2314,6 @@ void solver_local_stiffness(fea_solver_ptr self,int element)
             }
         }
     }
-    if ( self->shape_gradients[element][gauss] )
-      solver_free_shape_gradients(self,self->shape_gradients[element][gauss]);
-    self->shape_gradients[element][gauss] = grads;
   }
   
 #ifdef DUMP_DATA
@@ -2228,9 +2327,47 @@ void solver_local_stiffness(fea_solver_ptr self,int element)
 }
 
 
-void solver_create_residual_forces(fea_solver_ptr self)
+void solver_create_residual_forces(fea_solver_ptr self,int element)
 {
-  
+  /*
+   * Calculate residual force vector using formula
+   * Bonet & Wood, 1st edition, 7.15
+   */
+  int a,i,j,I,gauss;
+  real sum;
+  shape_gradients_ptr grads = (shape_gradients_ptr)0;
+ 
+  int nelem = self->fea_params_p->nodes_per_element;
+  int dof = self->task_p->dof;
+  for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
+  {
+    grads = self->shape_gradients[element][gauss];
+    if (grads)
+    {
+      /* loop by nodes */
+      for ( a = 0; a < nelem; ++ a)
+        /* loop by d.o.f in a residual vector matrix block T_{ai}, 3x1 */
+        for (i = 0; i < dof; ++ i)
+        {
+          sum = 0.0;
+          /* sum of particular derivatives and components of C tensor */
+          for (j = 0; j < dof; ++ j)
+            sum += self->stresses[element][gauss].components[i][j] *
+              grads->grads[j][a];
+          /*
+           * multiply by volume of an element = det(J)
+           * where divider 6 or 2 or others already accounted in
+           * weights of gauss nodes
+           */
+          sum *= fabs(grads->detJ);
+          /* ... and weight of the gauss nodes for  */
+          sum *= self->elements_db.gauss_nodes[gauss]->weight;
+          /* finally distribute to the global residual forces vector */
+          I = self->elements_p->elements[element][a]*dof + i;
+          self->global_forces_vct[I] += sum;
+        }
+    }
+  }
 }
 
 
