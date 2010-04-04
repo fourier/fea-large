@@ -347,6 +347,10 @@ typedef struct fea_solver_tag {
                                           * per gauss node
                                           * [number of elems] x [gauss nodes]
                                           */
+  tensor **graddefs;            /* Components of Deformation gradient tensor
+                                 * in gauss nodes
+                                 * array [number of elems] x [gauss nodes]
+                                 */
   tensor **stresses;            /* Components of Cauchy stress tensor
                                  * in gauss nodes
                                  * array [number of elems] x [gauss nodes]
@@ -698,6 +702,9 @@ static real solver_node_dof(fea_solver_ptr self,
  */
 static void solver_create_shape_gradients(fea_solver_ptr self);
 
+/* Create components of deformation gradient in gauss nodes per element */
+static void solver_create_graddefs(fea_solver_ptr self);
+
 /* Create components of the Cauchy stresses in gauss nodes  */
 static void solver_create_stresses(fea_solver_ptr self);
 
@@ -883,6 +890,8 @@ void solve( fea_task_ptr task,
   solver_create_element_database(solver);
   /* Create an array of shape functions gradients */
   solver_create_shape_gradients(solver);
+  solver_update_nodes_with_bc(solver, 1);
+
 
   solver_create_stresses(solver);
   
@@ -933,6 +942,8 @@ void solve( fea_task_ptr task,
   
   /* update nodes array with solution */
   solver_update_nodes_with_solution(solver,solver->global_solution_vct);
+  solver_create_stresses(solver);
+
   solver->export(solver,"deformed.msh");
   /* } */
   free_fea_solver(solver);
@@ -1806,14 +1817,16 @@ fea_solver* new_fea_solver(fea_task_ptr task,
   solver_create_element_params(solver);
 
   /* initialize an array of gradients of shape functions per
-   * element/gauss node and array of stresses */
+   * element/gauss node and arrays of deformation gradients/stresses */
   elnum = elements->elements_count;
   gauss_count = solver->fea_params_p->gauss_nodes_count;
   solver->shape_gradients = malloc(sizeof(shape_gradients_ptr*)*elnum);
   solver->stresses = malloc(sizeof(tensor*)*elnum);
+  solver->graddefs = malloc(sizeof(tensor*)*elnum);
   for (i = 0; i < elnum; ++ i)
   {
     solver->stresses[i] = malloc(sizeof(tensor)*gauss_count);
+    solver->graddefs[i] = malloc(sizeof(tensor)*gauss_count);
     solver->shape_gradients[i] =
       malloc(sizeof(shape_gradients_ptr)*gauss_count);
     for (j = 0; j < gauss_count; ++ j)
@@ -1821,7 +1834,10 @@ fea_solver* new_fea_solver(fea_task_ptr task,
       solver->shape_gradients[i][j] = (shape_gradients_ptr)0;
       for ( k = 0; k < MAX_DOF; ++ k)
         for (l = 0; l < MAX_DOF; ++ l)
+        {
           solver->stresses[i][j].components[k][l] = 0.0;
+          solver->graddefs[i][j].components[k][l] = 0.0;
+        }
     }
   }
   
@@ -1844,7 +1860,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
 void free_fea_solver(fea_solver_ptr solver)
 {
   /* deallocate resources */
-  /* free shape gradients and stresses */
+  /* free shape gradients, graddefs and stresses */
   int elnum = solver->elements_p->elements_count;
   int gauss_count = solver->fea_params_p->gauss_nodes_count;
   int i,j;
@@ -1855,9 +1871,11 @@ void free_fea_solver(fea_solver_ptr solver)
         solver_free_shape_gradients(solver,solver->shape_gradients[i][j]);
     free(solver->shape_gradients[i]);
     free(solver->stresses[i]);
+    free(solver->graddefs[i]);
   }
   free(solver->shape_gradients);
   free(solver->stresses);
+  free(solver->graddefs);
   /* deallocate all other resources */
   solver_free_element_database(solver);
   free_fea_task(solver->task_p);
@@ -2207,11 +2225,27 @@ void solver_create_shape_gradients(fea_solver_ptr self)
   }
 }
 
+void solver_create_graddefs(fea_solver_ptr self)
+{
+  int gauss,el;
+  /* loop by elements */
+  for ( el = 0;
+        el < self->elements_p->elements_count;
+        ++ el)
+  {
+    /* loop by gauss nodes per element */
+    for (gauss = 0;
+         gauss < self->fea_params_p->gauss_nodes_count;
+         ++ gauss)
+    {
+      solver_element_gauss_graddef(self, el, gauss,
+                                   self->graddefs[el][gauss].components);
+    }
+  }
+}
+
 void solver_create_stresses(fea_solver_ptr self)
 {
-    /* prepare an array of shape functions gradients in
-   * gauss nodes per element */
-  shape_gradients_ptr grads = (shape_gradients_ptr)0;
   int gauss,el;
   /* loop by elements */
   for ( el = 0;
@@ -2336,9 +2370,11 @@ void solver_create_residual_forces(fea_solver_ptr self,int element)
   int a,i,j,I,gauss;
   real sum;
   shape_gradients_ptr grads = (shape_gradients_ptr)0;
- 
+  real T[30];
   int nelem = self->fea_params_p->nodes_per_element;
   int dof = self->task_p->dof;
+  printf("i = %d\n",element);
+
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     grads = self->shape_gradients[element][gauss];
@@ -2364,14 +2400,17 @@ void solver_create_residual_forces(fea_solver_ptr self,int element)
           sum *= self->elements_db.gauss_nodes[gauss]->weight;
           /* finally distribute to the global residual forces vector */
           I = self->elements_p->elements[element][a]*dof + i;
-          self->global_forces_vct[I] += sum;
+          self->global_forces_vct[I] = sum;
+          T[a*dof+i] = sum;
         }
     }
   }
+  for (i = 0; i < 30; ++ i)
+    printf("%e\n",T[i]);
 }
 
 
-#define BONET_DEFGRADIENT
+
 void solver_element_gauss_graddef(fea_solver_ptr self,
                                   int element,
                                   int gauss,
@@ -2407,7 +2446,7 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
   /*
    * Deformation gradient could be calculated using the following
    * formula:
-   *                                        dN_k
+   *                                        N_k
    * F_{ij} = \sum\limits_{k=1}^{n} x_{k,i}------
    *                                        dX_j
    * See Bonet & Wood 7.6(a,b), 7.7 p.198, 1st edition
@@ -2447,7 +2486,7 @@ void solver_element_gauss_stress(fea_solver_ptr self,
   
   /* get deformation gradient */
   solver_element_gauss_graddef(self,element,gauss,F);
-
+  
   /* G = F'*F */
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
@@ -2469,7 +2508,7 @@ void solver_element_gauss_stress(fea_solver_ptr self,
     I1 += C[i][i];
   
   detF = det3x3(F);
-  /* Sigma = lambda*I1(C)+2mu*C */
+  /* Sigma = ( lambda*I1(C)+2mu*C )/det(F)*/
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
     {
@@ -2482,6 +2521,43 @@ void solver_element_gauss_stress(fea_solver_ptr self,
     {
       stress_tensor[i][j] = Sn[i][j];
     }
+  if ( element == 58 && gauss == 0)
+  {
+    printf("el0 = \n");
+    for ( i = 0; i < self->fea_params_p->nodes_per_element; ++ i)
+    {
+      for (j = 0; j  <MAX_DOF; ++ j)
+        printf("%f ",
+               self->nodes0_p->nodes[self->elements_p->elements[element][i]][j]);
+      printf("\n");
+    }
+
+    printf("el = \n");
+    for ( i = 0; i < self->fea_params_p->nodes_per_element; ++ i)
+    {
+      for (j = 0; j  <MAX_DOF; ++ j)
+        printf("%f ",
+               self->nodes_p->nodes[self->elements_p->elements[element][i]][j]);
+      printf("\n");
+    }
+
+    printf("F = \n");
+    for ( i = 0; i < MAX_DOF; ++ i)
+    {
+      for (j = 0; j < MAX_DOF; ++ j)
+        printf("%f ",F[i][j]);
+      printf("\n");
+    }
+    printf("S = \n");
+    for ( i = 0; i < MAX_DOF; ++ i)
+    {
+      for (j = 0; j < MAX_DOF; ++ j)
+        printf("%f ",Sn[i][j]);
+      printf("\n");
+    }
+
+  }
+
 }
 
 
@@ -2756,7 +2832,6 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
    */
   FILE* f;
   int i,j,k;
-  real stress[MAX_DOF][MAX_DOF];
  
   f = fopen(filename,"w+");
   if ( f )
@@ -2820,11 +2895,10 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
     fprintf(f,"%d\n",solver->elements_p->elements_count);
     for (i = 0; i < solver->elements_p->elements_count; ++ i)
     {
-      solver_element_gauss_stress(solver,i,3,stress);
       fprintf(f,"%d ",i+1);     /* element index */
       for ( j = 0; j < MAX_DOF; ++ j)
         for ( k = 0; k < MAX_DOF; ++ k)
-        fprintf(f,"%f ",stress[j][k]); 
+        fprintf(f,"%f ",solver->stresses[i][0].components[j][k]); 
       fprintf(f,"\n");
     }
     fprintf(f,"$EndElementData\n");
