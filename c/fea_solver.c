@@ -2373,6 +2373,9 @@ void solver_create_residual_forces(fea_solver_ptr self,int element)
   shape_gradients_ptr grads = (shape_gradients_ptr)0;
   int nelem = self->fea_params_p->nodes_per_element;
   int dof = self->task_p->dof;
+  real T[30];
+  real T1[30];
+  memset(T1,0,sizeof(real)*30);
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     /* grads = self->shape_gradients0[element][gauss]; */
@@ -2394,16 +2397,40 @@ void solver_create_residual_forces(fea_solver_ptr self,int element)
            * where divider 6 or 2 or others already accounted in
            * weights of gauss nodes
            */
+         
           sum *= fabs(grads->detJ);
+          T[a*dof+i] = sum;
           /* ... and weight of the gauss node */
           sum *= self->elements_db.gauss_nodes[gauss]->weight;
+          T1[a*dof+i] += sum;
           /* finally distribute to the global residual forces vector */
           I = self->elements_p->elements[element][a]*dof + i;
-          self->global_forces_vct[I] = -sum;
+          self->global_forces_vct[I] += -sum;
         }
+      if (element == 58 && gauss == 1)
+      {
+        printf("grads = \n");
+        for (j = 0; j < 3; ++ j)
+        {
+          for ( i = 0; i < nelem; ++ i)
+            printf("%f ",grads->grads[j][i]);
+          printf("\n");
+        }
+        printf("T = \n");
+        for (i = 0; i < 30; ++ i)
+          printf("%f\n",T[i]);
+      }
+      
       solver_free_shape_gradients(self,grads);
     }
   }
+  if (element == 58)
+      {
+        printf("T1 = \n");
+        for (i = 0; i < 30; ++ i)
+          printf("%f\n",T1[i]);
+
+      }
 }
 
 
