@@ -342,11 +342,11 @@ typedef struct fea_solver_tag {
                                    * values of derivatives of the
                                    * isoparametric shape functions
                                    * in gauss nodes */
-  shape_gradients_ptr **shape_gradients; /* an array of gradients of
-                                          * shape functios per element
-                                          * per gauss node
-                                          * [number of elems] x [gauss nodes]
-                                          */
+  shape_gradients_ptr **shape_gradients0; /* an array of gradients of
+                                           * shape functios per element
+                                           * per gauss node in initial configuration
+                                           * [number of elems] x [gauss nodes]
+                                           */
   tensor **graddefs;            /* Components of Deformation gradient tensor
                                  * in gauss nodes
                                  * array [number of elems] x [gauss nodes]
@@ -700,7 +700,7 @@ static real solver_node_dof(fea_solver_ptr self,
  * Create an array of shape functions gradients
  * in gauss nodes per elements
  */
-static void solver_create_shape_gradients(fea_solver_ptr self);
+static void solver_create_initial_shape_gradients(fea_solver_ptr self);
 
 /* Create components of deformation gradient in gauss nodes per element */
 static void solver_create_graddefs(fea_solver_ptr self);
@@ -888,9 +888,10 @@ void solve( fea_task_ptr task,
 
   /* Create elements database */
   solver_create_element_database(solver);
-  /* Create an array of shape functions gradients */
-  solver_create_shape_gradients(solver);
+  solver_create_initial_shape_gradients(solver);
+
   solver_update_nodes_with_bc(solver, 1);
+  /* Create an array of shape functions gradients in current configuration */
 
 
   solver_create_stresses(solver);
@@ -1820,18 +1821,18 @@ fea_solver* new_fea_solver(fea_task_ptr task,
    * element/gauss node and arrays of deformation gradients/stresses */
   elnum = elements->elements_count;
   gauss_count = solver->fea_params_p->gauss_nodes_count;
-  solver->shape_gradients = malloc(sizeof(shape_gradients_ptr*)*elnum);
+  solver->shape_gradients0 = malloc(sizeof(shape_gradients_ptr*)*elnum);
   solver->stresses = malloc(sizeof(tensor*)*elnum);
   solver->graddefs = malloc(sizeof(tensor*)*elnum);
   for (i = 0; i < elnum; ++ i)
   {
     solver->stresses[i] = malloc(sizeof(tensor)*gauss_count);
     solver->graddefs[i] = malloc(sizeof(tensor)*gauss_count);
-    solver->shape_gradients[i] =
+    solver->shape_gradients0[i] =
       malloc(sizeof(shape_gradients_ptr)*gauss_count);
     for (j = 0; j < gauss_count; ++ j)
     {
-      solver->shape_gradients[i][j] = (shape_gradients_ptr)0;
+      solver->shape_gradients0[i][j] = (shape_gradients_ptr)0;
       for ( k = 0; k < MAX_DOF; ++ k)
         for (l = 0; l < MAX_DOF; ++ l)
         {
@@ -1867,13 +1868,13 @@ void free_fea_solver(fea_solver_ptr solver)
   for (i = 0; i < elnum; ++ i)
   {
     for (j = 0; j < gauss_count; ++ j)
-      if (solver->shape_gradients[i][j])
-        solver_free_shape_gradients(solver,solver->shape_gradients[i][j]);
-    free(solver->shape_gradients[i]);
+      if (solver->shape_gradients0[i][j])
+        solver_free_shape_gradients(solver,solver->shape_gradients0[i][j]);
+    free(solver->shape_gradients0[i]);
     free(solver->stresses[i]);
     free(solver->graddefs[i]);
   }
-  free(solver->shape_gradients);
+  free(solver->shape_gradients0);
   free(solver->stresses);
   free(solver->graddefs);
   /* deallocate all other resources */
@@ -2195,7 +2196,7 @@ void dump_ctensor_asp_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 #endif
 
 
-void solver_create_shape_gradients(fea_solver_ptr self)
+void solver_create_initial_shape_gradients(fea_solver_ptr self)
 {
   /* prepare an array of shape functions gradients in
    * gauss nodes per element */
@@ -2216,10 +2217,10 @@ void solver_create_shape_gradients(fea_solver_ptr self)
       if (grads)
       {
         /* free previous shape gradients array */
-        if ( self->shape_gradients[element][gauss] )
+        if ( self->shape_gradients0[element][gauss] )
           solver_free_shape_gradients(self,
-                                      self->shape_gradients[element][gauss]);
-        self->shape_gradients[element][gauss] = grads;
+                                      self->shape_gradients0[element][gauss]);
+        self->shape_gradients0[element][gauss] = grads;
       }
     }
   }
@@ -2305,7 +2306,7 @@ void solver_local_stiffness(fea_solver_ptr self,int element)
   /* loop by gauss nodes - numerical integration */
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
-    grads = self->shape_gradients[element][gauss];
+    grads = self->shape_gradients0[element][gauss];
     if (grads)
     {
       /* Construct components of stiffness matrix in
@@ -2370,14 +2371,12 @@ void solver_create_residual_forces(fea_solver_ptr self,int element)
   int a,i,j,I,gauss;
   real sum;
   shape_gradients_ptr grads = (shape_gradients_ptr)0;
-  real T[30];
   int nelem = self->fea_params_p->nodes_per_element;
   int dof = self->task_p->dof;
-  printf("i = %d\n",element);
-
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
-    grads = self->shape_gradients[element][gauss];
+    /* grads = self->shape_gradients0[element][gauss]; */
+    grads = solver_new_shape_gradients(self,element,gauss);
     if (grads)
     {
       /* loop by nodes */
@@ -2396,17 +2395,15 @@ void solver_create_residual_forces(fea_solver_ptr self,int element)
            * weights of gauss nodes
            */
           sum *= fabs(grads->detJ);
-          /* ... and weight of the gauss nodes for  */
+          /* ... and weight of the gauss node */
           sum *= self->elements_db.gauss_nodes[gauss]->weight;
           /* finally distribute to the global residual forces vector */
           I = self->elements_p->elements[element][a]*dof + i;
-          self->global_forces_vct[I] = sum;
-          T[a*dof+i] = sum;
+          self->global_forces_vct[I] = -sum;
         }
+      solver_free_shape_gradients(self,grads);
     }
   }
-  for (i = 0; i < 30; ++ i)
-    printf("%e\n",T[i]);
 }
 
 
@@ -2417,8 +2414,14 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
                                   real graddef[MAX_DOF][MAX_DOF])
 {
   int i,j,k;
-  /* There are 2 ways to calculate Deformation gradient */
-#ifdef BONET_DEFGRADIENT
+  /*
+   * There are 2 ways to calculate Deformation gradient
+   * First, by using macro CURRENT_SHAPE_GRADIENTS, calculate
+   * using gradients of shape functions in current configuration,
+   * therefore they shall be obtained using solver_new_shape_gradients
+   * function
+   */
+#ifdef CURRENT_SHAPE_GRADIENTS
   /*
    * Deformation gradient using formula:
    *                              dX_I 
@@ -2433,8 +2436,7 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
     for (j = 0; j < MAX_DOF; ++ j)
     {
       graddef[i][j] = 0;
-      /* 2st version */
-      for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
+       for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
         graddef[i][j] +=
           grads->grads[j][k] * 
           self->nodes0_p->nodes[self->elements_p->elements[element][k]][i];
@@ -2442,7 +2444,7 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
   }
   inv3x3(graddef,&detF);
   solver_free_shape_gradients(self,grads);
-#else
+#else /* Second way is to use gradients of shapes in initial configuration */
   /*
    * Deformation gradient could be calculated using the following
    * formula:
@@ -2457,14 +2459,13 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
     for (j = 0; j < MAX_DOF; ++ j)
     {
       graddef[i][j] = 0;
-      /* 1st version */
-      for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
+       for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
         graddef[i][j] +=
-          self->shape_gradients[element][gauss]->grads[j][k] *
+          self->shape_gradients0[element][gauss]->grads[j][k] *
           self->nodes_p->nodes[self->elements_p->elements[element][k]][i];
     }
   }
-#endif  
+#endif /* CURRENT_SHAPE_GRADIENTS */
 }
 
 
@@ -2521,43 +2522,6 @@ void solver_element_gauss_stress(fea_solver_ptr self,
     {
       stress_tensor[i][j] = Sn[i][j];
     }
-  if ( element == 58 && gauss == 0)
-  {
-    printf("el0 = \n");
-    for ( i = 0; i < self->fea_params_p->nodes_per_element; ++ i)
-    {
-      for (j = 0; j  <MAX_DOF; ++ j)
-        printf("%f ",
-               self->nodes0_p->nodes[self->elements_p->elements[element][i]][j]);
-      printf("\n");
-    }
-
-    printf("el = \n");
-    for ( i = 0; i < self->fea_params_p->nodes_per_element; ++ i)
-    {
-      for (j = 0; j  <MAX_DOF; ++ j)
-        printf("%f ",
-               self->nodes_p->nodes[self->elements_p->elements[element][i]][j]);
-      printf("\n");
-    }
-
-    printf("F = \n");
-    for ( i = 0; i < MAX_DOF; ++ i)
-    {
-      for (j = 0; j < MAX_DOF; ++ j)
-        printf("%f ",F[i][j]);
-      printf("\n");
-    }
-    printf("S = \n");
-    for ( i = 0; i < MAX_DOF; ++ i)
-    {
-      for (j = 0; j < MAX_DOF; ++ j)
-        printf("%f ",Sn[i][j]);
-      printf("\n");
-    }
-
-  }
-
 }
 
 

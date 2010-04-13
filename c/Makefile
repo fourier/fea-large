@@ -3,7 +3,7 @@
 CC = gcc
 EXPAT_ROOT = ../../../../expat-2.0.1
 DMALLOC_ROOT = ../../../../dmalloc-5.5.2
-CFLAGS = -O3 -g -ansi -Wall -pedantic -DUSE_EXPAT -DDMALLOC -DDMALLOC_FUNC_CHECK
+CFLAGS =  -g -O3 -ansi -Wall -pedantic -DUSE_EXPAT -DDMALLOC -DDMALLOC_FUNC_CHECK -DDUMP_DATA -DCURRENT_SHAPE_GRADIENTS
 
 
 INCLUDES = -I $(EXPAT_ROOT)/lib -I $(DMALLOC_ROOT)
@@ -20,3 +20,6 @@ fea_solver.o: fea_solver.c
 .PHONY : clean
 clean :
 	rm $(objects) $(output)
+
+check-syntax: 
+	gcc -o nul -S ${CHK_SOURCES} 
