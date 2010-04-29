@@ -900,6 +900,7 @@ void solve( fea_task_ptr task,
   fea_solver_ptr solver = (fea_solver_ptr)0;
   char filename[50];
   int it = 0;
+  int i,j;
   real tolerance;
 #ifdef DUMP_DATA
   FILE *f;  
@@ -927,6 +928,18 @@ void solve( fea_task_ptr task,
 
   /* Increment loop shall start here */
   solver_update_nodes_with_bc(solver, 1);
+#ifdef DUMP_DATA
+  if ((f = fopen("updated_nodes.txt","w+")))
+  {
+    for ( i = 0; i < solver->nodes_p->nodes_count; ++ i)
+    {
+      for ( j = 0; j < MAX_DOF; ++ j)
+        fprintf(f,"%f ", solver->nodes_p->nodes[i][j]);
+      fprintf(f,"\n");
+    }
+    fclose(f);
+  }
+#endif
   /* Create an array of shape functions gradients in current configuration */
   solver_create_current_shape_gradients(solver);
   /* create stresses in order to use them in residual forces and in
@@ -935,7 +948,22 @@ void solve( fea_task_ptr task,
   do 
   {
     solver_create_residual_forces(solver);
+#ifdef DUMP_DATA
+    if ((f = fopen("residual_forces.txt","w+")))
+    {
+      for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
+      {
+        fprintf(f,"%e\n ", solver->global_forces_vct[i]);
+      }
+      fclose(f);
+    }
+#endif
+
+    
     solver_create_stiffness(solver);
+#ifdef DUMP_DATA
+    sp_matrix_dump(&solver->global_mtx);
+#endif
     /* apply prescribed boundary conditions */
     solver_apply_prescribed_bc(solver,0);
 
@@ -957,7 +985,7 @@ void solve( fea_task_ptr task,
     it ++;
     sprintf(filename,"deformed%d.msh",it);
     solver->export(solver,filename);
-  } while ( fabs(tolerance) > 1e-8 && it < 5);
+  } while ( fabs(tolerance) > 1e-8 && it < 1);
   
 
   /* solver_create_stresses(solver); */
@@ -1336,12 +1364,25 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
 {
   real tolerance = 1e-15;
   int max_iter = 20000;
+  int i;
+  real tol = 0;
+  real* r = malloc(self->rows_count*sizeof(real));
+  memset(r,0,self->rows_count*sizeof(real));
   /* reorder columns for to prepare to solve SLAE */
   sp_matrix_reorder(self);
   /* sp_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x); */
   sp_matrix_solve_cg(self,b,b,&max_iter,&tolerance,x);
+  /* Calculare residual r = A*x-b */
+  sp_matrix_mv(self,x,r);
+  for ( i = 0; i < self->rows_count; ++ i)
+    r[i] -= b[i];
+  /* Find a norm of residual vector */
+  for ( i = 0; i < self->rows_count; ++ i)
+    tol += r[i]*r[i];
+  tol = sqrt(tol);
 
-  printf("iter = %d, tolerance = %e\n",max_iter,tolerance);
+  printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n",max_iter,tolerance,tol);
+  free(r);
 }
 
 void sp_matrix_solve_cg(sp_matrix_ptr self,
@@ -1786,7 +1827,7 @@ void sp_matrix_dump(sp_matrix_ptr self)
       {
         pvalue = sp_matrix_element(self,i,j);
         value = pvalue ? *pvalue : 0;
-        fprintf(f,"%.5f ",value);
+        fprintf(f,"%e ",value);
       }
       fprintf(f,"\n");
     }
@@ -2334,7 +2375,7 @@ void solver_create_stiffness(fea_solver_ptr self)
   for (; el < self->elements_p->elements_count; ++ el)
   {
     solver_local_constitutive_part(self,el);
-    solver_local_initial_stess_part(self,el);
+    /* solver_local_initial_stess_part(self,el); */
   }
 }
 
@@ -2534,6 +2575,8 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
   shape_gradients_ptr grads = (shape_gradients_ptr)0;
   int nelem = self->fea_params_p->nodes_per_element;
   int dof = self->task_p->dof;
+  FILE* f;
+  char fname[20];
   real T[30];
   real T1[30];
   memset(T1,0,sizeof(real)*30);
@@ -2566,32 +2609,53 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
           I = self->elements_p->elements[element][a]*dof + i;
           self->global_forces_vct[I] += -sum;
         }
-      /*
-      if (element == 58 && gauss == 1)
+      
+      if (element == 69)
       {
-        printf("grads = \n");
-        for (j = 0; j < 3; ++ j)
+        printf("%e\n",grads->detJ);
+        sprintf(fname,"Dump/grads%d.txt",gauss);
+        f = fopen(fname,"w+");
+        if (f)
         {
-          for ( i = 0; i < nelem; ++ i)
-            printf("%f ",grads->grads[j][i]);
-          printf("\n");
+          for (j = 0; j < 3; ++ j)
+          {
+            for ( i = 0; i < nelem; ++ i)
+              fprintf(f,"%e ",grads->grads[j][i]);
+            fprintf(f,"\n");
+          }
+          fclose(f);
         }
-        printf("T = \n");
-        for (i = 0; i < 30; ++ i)
-          printf("%f\n",T[i]);
+        sprintf(fname,"Dump/sigma%d.txt",gauss);
+        f = fopen(fname,"w+");
+        if (f)
+        {
+          for (i = 0; i < 3; ++ i)
+          {
+            for (j = 0; j < 3; ++ j)
+              fprintf(f,"%e ", self->stresses[element][gauss].components[i][j]);
+            fprintf(f,"\n");
+          }
+          fclose(f);
+        }
+        sprintf(fname,"Dump/tvector%d.txt",gauss);
+        f = fopen(fname,"w+");
+        if (f)
+        {
+          for (i = 0; i < 30; ++ i)
+            fprintf(f,"%e\n",T[i]);
+          fclose(f);
+        }
       }
-      */
     }
   }
-  /*
-  if (element == 58)
-      {
-        printf("T1 = \n");
-        for (i = 0; i < 30; ++ i)
-          printf("%f\n",T1[i]);
-
-      }
-  */
+  sprintf(fname,"Dump/T%d.txt",element);
+  f = fopen(fname,"w+");
+  if (f)
+  {
+    for (i = 0; i < 30; ++ i)
+      fprintf(f,"%e\n",T1[i]);
+    fclose(f);
+  }
 }
 
 
