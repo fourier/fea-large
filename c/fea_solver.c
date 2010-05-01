@@ -838,6 +838,23 @@ real det3x3(real (*matrix3x3)[3]);
  */
 BOOL inv3x3(real (*matrix3x3)[3], real* det);
 
+/*
+ * Performs matrix multiplication A x B writing result to R
+ */
+void matrix_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
+
+/*
+ * Performs matrix multiplication A' x B writing result to R
+ */
+void matrix_transpose_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
+
+/*
+ * Performs matrix multiplication A x B' writing result to R
+ */
+void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
+
+
+
 int main(int argc, char **argv)
 {
   char* filename = 0;
@@ -950,6 +967,12 @@ void solve( fea_task_ptr task,
   do 
   {
     solver_create_residual_forces(solver);
+
+    
+    solver_create_stiffness(solver);
+
+    /* apply prescribed boundary conditions */
+    solver_apply_prescribed_bc(solver,0);
 #ifdef DUMP_DATA
     if ((f = fopen("residual_forces.txt","w+")))
     {
@@ -959,15 +982,6 @@ void solve( fea_task_ptr task,
       }
       fclose(f);
     }
-#endif
-
-    
-    solver_create_stiffness(solver);
-#ifdef DUMP_DATA
-#endif
-    /* apply prescribed boundary conditions */
-    solver_apply_prescribed_bc(solver,0);
-#ifdef DUMP_DATA
     sp_matrix_dump(&solver->global_mtx);
 #endif
 
@@ -2726,12 +2740,18 @@ void solver_element_gauss_stress(fea_solver_ptr self,
       Sn[i][j] =
         (lambda*I1*DELTA(i,j)+ 2*mu*C[i][j])/detF;
     }
-  /* TODO: S = F*S*F'; for model A5 */
+  /* S = F*S*F'; for model A5 */
+  /*
+   * Calculate in 2 steps, using C as for a temporary results 
+   * 1) C = F*Sn
+   */
+  matrix_mul3x3(F,Sn,C);
+  /* 2) S = C*F' */
+  matrix_transpose2_mul3x3(C,F,stress_tensor);
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
     {
       graddef_tensor[i][j] = F[i][j];
-      stress_tensor[i][j] = Sn[i][j];
     }
 }
 
@@ -3279,6 +3299,56 @@ BOOL inv3x3(real (*m)[3],real* det)
 	m[2][0] = m20;	m[2][1] = m21;	m[2][2] = m22;
   
   return TRUE;
+}
+
+void matrix_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
+{
+  int i,j,k;
+  real sum;
+  for (i = 0; i < 3; ++ i)
+  {
+    for (j = 0; j < 3; ++ j)
+    {
+      sum = 0;
+      for (k = 0; k < 3; ++ k)
+        sum += A[i][k]*B[k][j];
+      R[i][j] = sum;
+    }
+  }
+}
+
+
+void matrix_transpose_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
+{
+  int i,j,k;
+  real sum;
+  for (i = 0; i < 3; ++ i)
+  {
+    for (j = 0; j < 3; ++ j)
+    {
+      sum = 0;
+      for (k = 0; k < 3; ++ k)
+        sum += A[k][i]*B[k][j];
+      R[i][j] = sum;
+    }
+  }
+}
+
+
+void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
+{
+  int i,j,k;
+  real sum;
+  for (i = 0; i < 3; ++ i)
+  {
+    for (j = 0; j < 3; ++ j)
+    {
+      sum = 0;
+      for (k = 0; k < 3; ++ k)
+        sum += A[i][k]*B[j][k];
+      R[i][j] = sum;
+    }
+  }
 }
 
 
@@ -4038,7 +4108,43 @@ BOOL initial_data_load(char *filename,
   return result;
 }
 
+BOOL test_matrix()
+{
+  BOOL result = TRUE;
+  int i,j;
+  /* input data */
+  real A[3][3] = {{1, 2, 0}, {2, 0, 3}, {0, 2, 3}};
+  real B[3][3] = {{0, 2, 1}, {1, 1, 1}, {3, 2, -1}};
+  /* expected results */
+  real result_matmul[3][3] = {{2, 4, 3}, {9, 10, -1}, {11, 8, -1}};
+  real result_matmul_transp[3][3] = {{2, 4, 3}, {6, 8, 0}, {12, 9, 0}};
+  real result_matmul_transp2[3][3] = {{4, 3, 7}, {3, 5, 3}, {7, 5, 1}};
+  /* results array */
+  real R[3][3];
 
+  /* test A x B */
+  matrix_mul3x3(A,B,R);
+  for (i = 0; i < 3; ++ i)
+    for (j = 0; j < 3; ++ j)
+      result &= EQL(R[i][j],result_matmul[i][j]);
+  if(!result) return FALSE;
+
+  /* test A x B' */
+  matrix_transpose_mul3x3(A,B,R);
+  for (i = 0; i < 3; ++ i)
+    for (j = 0; j < 3; ++ j)
+      result &= EQL(R[i][j],result_matmul_transp[i][j]);
+  if(!result) return FALSE;
+
+  /* test A' x B */
+  matrix_transpose2_mul3x3(A,B,R);
+  for (i = 0; i < 3; ++ i)
+    for (j = 0; j < 3; ++ j)
+      result &= EQL(R[i][j],result_matmul_transp2[i][j]);
+  if(!result) return FALSE;
+
+  return result;
+}
 
 BOOL test_solver()
 {
@@ -4195,6 +4301,7 @@ BOOL test_ilu()
 BOOL do_tests()
 {
   BOOL result = TRUE;
+  result &= test_matrix();
   result &= test_solver();
   result &= test_ilu();
   return result;
