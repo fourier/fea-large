@@ -936,7 +936,7 @@ void solve( fea_task_ptr task,
     for ( i = 0; i < solver->nodes_p->nodes_count; ++ i)
     {
       for ( j = 0; j < MAX_DOF; ++ j)
-        fprintf(f,"%f ", solver->nodes_p->nodes[i][j]);
+        fprintf(f,"%e ", solver->nodes_p->nodes[i][j]);
       fprintf(f,"\n");
     }
     fclose(f);
@@ -964,10 +964,12 @@ void solve( fea_task_ptr task,
     
     solver_create_stiffness(solver);
 #ifdef DUMP_DATA
-    sp_matrix_dump(&solver->global_mtx);
 #endif
     /* apply prescribed boundary conditions */
     solver_apply_prescribed_bc(solver,0);
+#ifdef DUMP_DATA
+    sp_matrix_dump(&solver->global_mtx);
+#endif
 
     /* solve global equation system */
     sp_matrix_solve(&solver->global_mtx,
@@ -1801,25 +1803,6 @@ void sp_matrix_dump(sp_matrix_ptr self)
   FILE* f;
   int i,j;
   real *pvalue,value;
-  if ((f = fopen("mywidths.txt","w+")))
-  {
-    for ( i = 0; i < self->rows_count; ++ i)
-      fprintf(f,"%d: %d\n",i+1,self->rows[i].last_index + 1);
-    fclose(f);
-  }
-  if( (f = fopen("rows.txt","w+")))
-  {
-    for ( i = 0; i < self->rows_count; ++ i)
-    {
-      for ( j = 0; j <= self->rows[i].last_index; ++ j)
-        fprintf(f,"%d ",self->rows[i].indexes[j] + 1);
-      fprintf(f,"\n");
-      for ( j = 0; j <= self->rows[i].last_index; ++ j)
-        fprintf(f,"%f ",self->rows[i].values[j]);
-      fprintf(f,"\n\n");
-    }
-    fclose(f);
-  }
 
   if ((f = fopen("global_matrix_c.txt","w+")))
   {
@@ -2583,11 +2566,13 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
   shape_gradients_ptr grads = (shape_gradients_ptr)0;
   int nelem = self->fea_params_p->nodes_per_element;
   int dof = self->task_p->dof;
+
   FILE* f;
   char fname[20];
   real T[30];
   real T1[30];
   memset(T1,0,sizeof(real)*30);
+
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     grads = self->shape_gradients[element][gauss];
@@ -2617,45 +2602,9 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
           I = self->elements_p->elements[element][a]*dof + i;
           self->global_forces_vct[I] += -sum;
         }
-      
-      if (element == 69)
-      {
-        printf("%e\n",grads->detJ);
-        sprintf(fname,"Dump/grads%d.txt",gauss);
-        f = fopen(fname,"w+");
-        if (f)
-        {
-          for (j = 0; j < 3; ++ j)
-          {
-            for ( i = 0; i < nelem; ++ i)
-              fprintf(f,"%e ",grads->grads[j][i]);
-            fprintf(f,"\n");
-          }
-          fclose(f);
-        }
-        sprintf(fname,"Dump/sigma%d.txt",gauss);
-        f = fopen(fname,"w+");
-        if (f)
-        {
-          for (i = 0; i < 3; ++ i)
-          {
-            for (j = 0; j < 3; ++ j)
-              fprintf(f,"%e ", self->stresses[element][gauss].components[i][j]);
-            fprintf(f,"\n");
-          }
-          fclose(f);
-        }
-        sprintf(fname,"Dump/tvector%d.txt",gauss);
-        f = fopen(fname,"w+");
-        if (f)
-        {
-          for (i = 0; i < 30; ++ i)
-            fprintf(f,"%e\n",T[i]);
-          fclose(f);
-        }
-      }
     }
   }
+#ifdef DUMP_DATA  
   sprintf(fname,"Dump/T%d.txt",element);
   f = fopen(fname,"w+");
   if (f)
@@ -2664,6 +2613,7 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
       fprintf(f,"%e\n",T1[i]);
     fclose(f);
   }
+#endif
 }
 
 
@@ -2805,6 +2755,7 @@ void solver_ctensor(fea_solver_ptr self,
               + mu * DELTA (i, k) * DELTA (j, l)    \
               + mu * DELTA (i, l) * DELTA (j, k) ) / detF;
 }
+
 void solver_create_forces_bc(fea_solver_ptr self)
 {
   /* TODO: implement this */
@@ -2872,8 +2823,7 @@ void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
     pvalue = sp_matrix_element(&self->global_mtx,j,index);
     if (pvalue)
     {
-      self->global_forces_vct[j] = self->global_forces_vct[j] -
-        *pvalue*presc;
+      self->global_forces_vct[j] -= *pvalue*presc;
       *pvalue = 0;
     }
     pvalue = sp_matrix_element(&self->global_mtx,index,j);
