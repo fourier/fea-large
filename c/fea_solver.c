@@ -767,11 +767,13 @@ static void solver_element_gauss_graddef(fea_solver_ptr self,
  * Calculate stress tensor in gauss node
  * element - element number
  * gauss - gauss node number in element
+ * graddef - MAX_DOF x MAX_DOF array of components of Deformation gradient
  * stress - MAX_DOF x MAX_DOF array of components of Cauchy stress tensor
  */
 static void solver_element_gauss_stress(fea_solver_ptr self,
                                         int element,
                                         int gauss,
+                                        real graddef_tensor[MAX_DOF][MAX_DOF],
                                         real stress_tensor[MAX_DOF][MAX_DOF]);
 
 
@@ -2227,7 +2229,7 @@ void solver_dump_local_stiffness(fea_solver* self,real **stiff,int el)
     for ( i = 0; i < size; ++ i)
     {
       for ( j = 0; j < size; ++ j)
-        fprintf(f,"%.5f ",stiff[i][j]);
+        fprintf(f,"%e ",stiff[i][j]);
       fprintf(f,"\n");
     }
     fclose(f);
@@ -2354,6 +2356,7 @@ void solver_create_stresses(fea_solver_ptr self)
          ++ gauss)
     {
       solver_element_gauss_stress(self, el, gauss,
+                                  self->graddefs[el][gauss].components,
                                   self->stresses[el][gauss].components);
     }
   }
@@ -2375,7 +2378,7 @@ void solver_create_stiffness(fea_solver_ptr self)
   for (; el < self->elements_p->elements_count; ++ el)
   {
     solver_local_constitutive_part(self,el);
-    /* solver_local_initial_stess_part(self,el); */
+    solver_local_initial_stess_part(self,el);
   }
 }
 
@@ -2395,11 +2398,10 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
   int dof;
   /* local stiffness matrix */
   real **stiff = (real**)0;
-  /* deformation gradient */
-  real graddef[MAX_DOF][MAX_DOF];
   /* C tensor depending on material model */
   real ctens[MAX_DOF][MAX_DOF][MAX_DOF][MAX_DOF];
   
+  real cikjl = 0;
   /* allocate memory for a local stiffness matrix */
   size = self->fea_params_p->nodes_per_element*self->task_p->dof;
   stiff = (real**)malloc(sizeof(real*)*size);
@@ -2409,8 +2411,6 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
     memset(stiff[i],0,sizeof(real)*size);
   }
   
-  /* obtain a C tensor */
-  solver_ctensor(self,graddef,ctens);
   
 #ifdef DUMP_DATA  
   dump_ctensor_asp_matrix(ctens);
@@ -2422,6 +2422,9 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
   /* loop by gauss nodes - numerical integration */
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
+    /* obtain a C tensor */
+    solver_ctensor(self,self->graddefs[element][gauss].components,ctens);
+
     grads = self->shape_gradients[element][gauss];
     if (grads)
     {
@@ -2443,8 +2446,13 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
               /* sum of particular derivatives and components of C tensor */
               for (k = 0; k < dof; ++ k)
                 for (l = 0; l < dof; ++ l)
+                {
+                  /* cikjl = ctens[i][k][j][l]; */
+                  cikjl = (ctens[i][k][j][l]+ctens[i][k][l][j]+
+                           ctens[k][i][j][l]+ctens[k][i][l][j])/4.;
                   sum += 
-                    grads->grads[k][a]*ctens[i][k][j][l]*grads->grads[l][b];
+                    grads->grads[k][a]*cikjl*grads->grads[l][b];
+                }
               /*
                * multiply by volume of an element = det(J)
                * where divider 6 or 2 or others already accounted in
@@ -2723,6 +2731,7 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
 void solver_element_gauss_stress(fea_solver_ptr self,
                                  int element,
                                  int gauss,
+                                 real graddef_tensor[MAX_DOF][MAX_DOF],
                                  real stress_tensor[MAX_DOF][MAX_DOF])
 {
   int i,j,k;
@@ -2738,7 +2747,7 @@ void solver_element_gauss_stress(fea_solver_ptr self,
   
   /* get deformation gradient */
   solver_element_gauss_graddef(self,element,gauss,F);
-  
+
   /* G = F'*F */
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
@@ -2771,6 +2780,7 @@ void solver_element_gauss_stress(fea_solver_ptr self,
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
     {
+      graddef_tensor[i][j] = F[i][j];
       stress_tensor[i][j] = Sn[i][j];
     }
 }
@@ -2783,6 +2793,7 @@ void solver_ctensor(fea_solver_ptr self,
 {
   int i,j,k,l;
   real lambda,mu;
+  real detF = det3x3(graddef);
   lambda = self->task_p->model.parameters[0];
   mu = self->task_p->model.parameters[1];
   for ( i = 0; i < MAX_DOF; ++ i )
@@ -2790,9 +2801,9 @@ void solver_ctensor(fea_solver_ptr self,
       for ( k = 0; k < MAX_DOF; ++ k )
         for ( l = 0; l < MAX_DOF; ++ l )
           ctensor[i][j][k][l] = 
-            lambda * DELTA (i, j) * DELTA (k, l)    \
-            + mu * DELTA (i, k) * DELTA (j, l)    \
-            + mu * DELTA (i, l) * DELTA (j, k);
+            ( lambda * DELTA (i, j) * DELTA (k, l)  \
+              + mu * DELTA (i, k) * DELTA (j, l)    \
+              + mu * DELTA (i, l) * DELTA (j, k) ) / detF;
 }
 void solver_create_forces_bc(fea_solver_ptr self)
 {
