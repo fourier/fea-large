@@ -485,6 +485,12 @@ static void init_sp_matrix(sp_matrix_ptr mtx,
 static void free_sp_matrix(sp_matrix_ptr mtx);
 
 /*
+ * Clear the sparse matrix.
+ * Set the element values to zero keeping sparsity portrait
+ */
+static void clear_sp_matrix(sp_matrix_ptr mtx);
+
+/*
  * Construct CSLR sparse matrix based on sp_matrix format
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
@@ -1115,6 +1121,18 @@ void free_sp_matrix(sp_matrix_ptr mtx)
     mtx->rows = (indexed_array*)0;
     mtx->cols_count = 0;
     mtx->rows_count = 0;
+  }
+}
+
+void clear_sp_matrix(sp_matrix_ptr mtx)
+{
+  int i;
+  if (mtx)
+  {
+    for (i = 0; i < mtx->rows_count; ++ i)
+    {
+      memset(mtx->rows[i].values,0,sizeof(real)*(mtx->rows[i].last_index+1));
+    }
   }
 }
 
@@ -2349,17 +2367,10 @@ void solver_create_residual_forces(fea_solver_ptr self)
 /* Create global stiffness matrix */
 void solver_create_stiffness(fea_solver_ptr self)
 {
-  /* allocate resources initialize global stiffness matrix */
-  /* global matrix size */
-  int msize = self->nodes_p->nodes_count*self->task_p->dof;
-  /* approximate bandwidth of a global matrix
-   * usually sqrt(msize)*2*/
-  int bandwidth = (int)sqrt(msize)*2;
   int el = 0;
-  free_sp_matrix(&self->global_mtx);
-  init_sp_matrix(&self->global_mtx,msize,msize,bandwidth);
-
-
+  /* clear global stiffness matrix before constructing a new one */
+  clear_sp_matrix(&self->global_mtx);
+  
   for (; el < self->elements_p->elements_count; ++ el)
   {
     solver_local_constitutive_part(self,el);
