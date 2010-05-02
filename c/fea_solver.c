@@ -491,6 +491,13 @@ static void free_sp_matrix(sp_matrix_ptr mtx);
 static void clear_sp_matrix(sp_matrix_ptr mtx);
 
 /*
+ * Copy sparse matrix from mtx_from to mtx_to
+ * This function assumes what mtx_to is already cleared by free_sp_matrix
+ * or mtx_to is uninitialized pointer
+ */
+static void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to);
+
+/*
  * Construct CSLR sparse matrix based on sp_matrix format
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
@@ -926,6 +933,7 @@ void solve( fea_task_ptr task,
   char filename[50];
   int it = 0;
   real tolerance;
+  sp_matrix stiffness;
 #ifdef DUMP_DATA
   /* Dump all data in debug version */
   dump_input_data("input.txt",task,fea_params,nodes,elements,presc_boundary);
@@ -957,6 +965,11 @@ void solve( fea_task_ptr task,
   /* create stresses in order to use them in residual forces and in
    * initial stress component of the stiffness matrix */
   solver_create_stresses(solver);
+
+  /* create global stiffness matrix K */
+  solver_create_stiffness(solver);
+  /* store global stiffness matrix for modified Newton method */
+  copy_sp_matrix(&solver->global_mtx,&stiffness);
   do 
   {
     it ++;
@@ -965,8 +978,20 @@ void solve( fea_task_ptr task,
     solver_create_residual_forces(solver);
 
     /* create global stiffness matrix K */
-    solver_create_stiffness(solver);
-
+    if (solver->task_p->modified_newton) 
+    {
+      /*
+       * use stored  stiffness matrix in
+       * modified Newton method
+       */
+      free_sp_matrix(&solver->global_mtx);
+      copy_sp_matrix(&stiffness,&solver->global_mtx);
+    }
+    else                        
+    {
+      /* create global stiffness otherwise */
+      solver_create_stiffness(solver);
+    }
     /* apply prescribed boundary conditions */
     solver_apply_prescribed_bc(solver,0);
 
@@ -989,9 +1014,12 @@ void solve( fea_task_ptr task,
     solver_create_stresses(solver);
 
   } while ( fabs(tolerance) > 1e-8 && it < 30);
+  /* export solution */
   sprintf(filename,"deformed%d.msh",it);
   solver->export(solver,filename);
 
+  /* clear stored stiffness matrix */
+  free_sp_matrix(&stiffness);
 
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -1131,7 +1159,34 @@ void clear_sp_matrix(sp_matrix_ptr mtx)
   {
     for (i = 0; i < mtx->rows_count; ++ i)
     {
-      memset(mtx->rows[i].values,0,sizeof(real)*(mtx->rows[i].last_index+1));
+      memset(mtx->rows[i].values,0,sizeof(real)*(mtx->rows[i].width));
+    }
+  }
+}
+
+void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
+{
+  int i;
+  if (mtx_from && mtx_to)
+  {
+    mtx_to->rows_count = mtx_from->rows_count;
+    mtx_to->cols_count = mtx_from->cols_count;
+    mtx_to->ordered = mtx_from->ordered;
+    mtx_to->rows =
+      (indexed_array*)malloc(sizeof(indexed_array)*mtx_to->rows_count);
+    /* copy rows */
+    for (i = 0; i < mtx_from->rows_count; ++ i)
+    {
+      mtx_to->rows[i].width = mtx_from->rows[i].width;
+      mtx_to->rows[i].last_index = mtx_from->rows[i].last_index;
+      mtx_to->rows[i].indexes =
+        (int*)malloc(sizeof(int)*mtx_from->rows[i].width);
+      mtx_to->rows[i].values =
+        (real*)malloc(sizeof(real)*mtx_from->rows[i].width);
+      memcpy(mtx_to->rows[i].indexes, mtx_from->rows[i].indexes,
+             sizeof(int)*mtx_from->rows[i].width);
+      memcpy(mtx_to->rows[i].values, mtx_from->rows[i].values,
+             sizeof(real)*mtx_from->rows[i].width);
     }
   }
 }
@@ -4156,7 +4211,7 @@ BOOL test_solver()
 
 
   sp_matrix_reorder(&mtx);
-
+  
   sp_matrix_solve(&mtx,v,x);
   result = !( fabs(x[0]-1) > TOLERANCE ||
               fabs(x[1]-2) > TOLERANCE ||
