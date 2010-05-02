@@ -919,10 +919,8 @@ void solve( fea_task_ptr task,
   fea_solver_ptr solver = (fea_solver_ptr)0;
   char filename[50];
   int it = 0;
-  int i,j;
   real tolerance;
 #ifdef DUMP_DATA
-  FILE *f;  
   /* Dump all data in debug version */
   dump_input_data("input.txt",task,fea_params,nodes,elements,presc_boundary);
 #endif
@@ -945,20 +943,9 @@ void solve( fea_task_ptr task,
   /* create an array of shape functions gradients in initial configuration */
   solver_create_initial_shape_gradients(solver);
 
-  /* Increment loop shall start here */
+  /* Increment loop starts here */
   solver_update_nodes_with_bc(solver, 1);
-#ifdef DUMP_DATA
-  if ((f = fopen("updated_nodes.txt","w+")))
-  {
-    for ( i = 0; i < solver->nodes_p->nodes_count; ++ i)
-    {
-      for ( j = 0; j < MAX_DOF; ++ j)
-        fprintf(f,"%e ", solver->nodes_p->nodes[i][j]);
-      fprintf(f,"\n");
-    }
-    fclose(f);
-  }
-#endif
+
   /* Create an array of shape functions gradients in current configuration */
   solver_create_current_shape_gradients(solver);
   /* create stresses in order to use them in residual forces and in
@@ -966,47 +953,38 @@ void solve( fea_task_ptr task,
   solver_create_stresses(solver);
   do 
   {
+    it ++;
+
+    /* create right-side vector of residual forces (-R) */
     solver_create_residual_forces(solver);
 
-    
+    /* create global stiffness matrix K */
     solver_create_stiffness(solver);
 
     /* apply prescribed boundary conditions */
     solver_apply_prescribed_bc(solver,0);
-#ifdef DUMP_DATA
-    if ((f = fopen("residual_forces.txt","w+")))
-    {
-      for ( i = 0; i < solver->global_mtx.rows_count; ++ i)
-      {
-        fprintf(f,"%e\n ", solver->global_forces_vct[i]);
-      }
-      fclose(f);
-    }
-    sp_matrix_dump(&solver->global_mtx);
-#endif
 
-    /* solve global equation system */
+    /* solve global equation system K*u=-R */
     sp_matrix_solve(&solver->global_mtx,
                     solver->global_forces_vct,
                     solver->global_solution_vct);
+    /* check for convergence */
 
     tolerance = cdot(solver->global_forces_vct,
                      solver->global_solution_vct,
                      solver->global_mtx.rows_count);
-
+    
+    printf("Tolerance <X,R> = %e\n",tolerance);
+    printf("Iteration %d finished\n",it);
     
     /* update nodes array with solution */
     solver_update_nodes_with_solution(solver,solver->global_solution_vct);
     solver_create_current_shape_gradients(solver);
     solver_create_stresses(solver);
-    printf("Tolerance = %f\n",tolerance);
-    it ++;
-    sprintf(filename,"deformed%d.msh",it);
-    solver->export(solver,filename);
-  } while ( fabs(tolerance) > 1e-8 && it < 1);
-  
 
-  /* solver_create_stresses(solver); */
+  } while ( fabs(tolerance) > 1e-8 && it < 30);
+  sprintf(filename,"deformed%d.msh",it);
+  solver->export(solver,filename);
 
 
   free_fea_solver(solver);
@@ -2362,7 +2340,7 @@ void solver_create_stresses(fea_solver_ptr self)
 void solver_create_residual_forces(fea_solver_ptr self)
 {
   int el = 0;
-  memset(self->global_solution_vct,0,sizeof(real)*self->global_mtx.rows_count);
+  memset(self->global_forces_vct,0,sizeof(real)*self->global_mtx.rows_count);
 
   for (; el < self->elements_p->elements_count; ++ el)
     solver_local_residual_forces(self, el);
@@ -2371,7 +2349,17 @@ void solver_create_residual_forces(fea_solver_ptr self)
 /* Create global stiffness matrix */
 void solver_create_stiffness(fea_solver_ptr self)
 {
+  /* allocate resources initialize global stiffness matrix */
+  /* global matrix size */
+  int msize = self->nodes_p->nodes_count*self->task_p->dof;
+  /* approximate bandwidth of a global matrix
+   * usually sqrt(msize)*2*/
+  int bandwidth = (int)sqrt(msize)*2;
   int el = 0;
+  free_sp_matrix(&self->global_mtx);
+  init_sp_matrix(&self->global_mtx,msize,msize,bandwidth);
+
+
   for (; el < self->elements_p->elements_count; ++ el)
   {
     solver_local_constitutive_part(self,el);
@@ -2581,12 +2569,6 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
   int nelem = self->fea_params_p->nodes_per_element;
   int dof = self->task_p->dof;
 
-  FILE* f;
-  char fname[20];
-  real T[30];
-  real T1[30];
-  memset(T1,0,sizeof(real)*30);
-
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     grads = self->shape_gradients[element][gauss];
@@ -2608,26 +2590,15 @@ void solver_local_residual_forces(fea_solver_ptr self,int element)
            * weights of gauss nodes
            */
           sum *= fabs(grads->detJ);
-          T[a*dof+i] = sum;
           /* ... and weight of the gauss node */
           sum *= self->elements_db.gauss_nodes[gauss]->weight;
-          T1[a*dof+i] += sum;
           /* finally distribute to the global residual forces vector */
           I = self->elements_p->elements[element][a]*dof + i;
           self->global_forces_vct[I] += -sum;
         }
     }
   }
-#ifdef DUMP_DATA  
-  sprintf(fname,"Dump/T%d.txt",element);
-  f = fopen(fname,"w+");
-  if (f)
-  {
-    for (i = 0; i < 30; ++ i)
-      fprintf(f,"%e\n",T1[i]);
-    fclose(f);
-  }
-#endif
+
 }
 
 
@@ -3073,9 +3044,9 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
     fprintf(f,"%d\n",solver->nodes_p->nodes_count);
     for (i = 0; i < solver->nodes_p->nodes_count; ++ i)
       fprintf(f,"%d %f %f %f\n",i+1,
-              solver->global_solution_vct[i*solver->task_p->dof],
-              solver->global_solution_vct[i*solver->task_p->dof+1],
-              solver->global_solution_vct[i*solver->task_p->dof+2]);
+              solver->nodes_p->nodes[i][0] - solver->nodes0_p->nodes[i][0],
+              solver->nodes_p->nodes[i][1] - solver->nodes0_p->nodes[i][1],
+              solver->nodes_p->nodes[i][2] - solver->nodes0_p->nodes[i][2]);
     fprintf(f,"$EndNodeData\n");
     
     /* Export stresses */
