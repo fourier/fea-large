@@ -79,6 +79,24 @@ typedef void (*export_solution_t) (fea_solver_ptr, char *filename);
 typedef void (*apply_bc_t) (fea_solver_ptr self, int index, real arg);
 
 /*
+ * A pointer to the function for calculating Cauchy stresses in
+ * gauss nodes of the element
+ */
+typedef void (*element_gauss_stress_t)(fea_solver_ptr self,
+                                       int element,
+                                       int gauss,
+                                       real graddef_tensor[MAX_DOF][MAX_DOF],
+                                       real stress_tensor[MAX_DOF][MAX_DOF]);
+/*
+ * A pointer to the function for calculating the C elasticity tensor
+ * by given deformation gradient
+ */
+typedef void (*solver_ctensor_t)(fea_solver_ptr self,
+                                 real (*graddef)[MAX_DOF],
+                                 real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
+
+
+/*
  * arrays of gauss nodes with coefficients                   
  * layout: [number_of_nodes x 4], with values:               
  * {weight, r,s,t}                                           
@@ -370,7 +388,15 @@ typedef struct fea_solver_tag {
                                    * shape function */
   isoform_t shape;                /* a function pointer to the shape
                                    * function */
+  element_gauss_stress_t element_gauss_stress; /* a pointer to the function
+                                                * for calculation of the
+                                                * model-specific Cauchy
+                                                * in gauss nodes per element */
+  solver_ctensor_t ctensor; /* a function pointer to the C elasticity
+                                    * tensor
+                                    */
   export_solution_t export;     /* a pointer to the export function */
+
   sp_matrix global_mtx;         /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_reactions_vct;   /* reactions in fixed dofs */
@@ -702,19 +728,15 @@ void dump_input_data( char* filename,
  */
 static void solver_create_element_params(fea_solver_ptr self);
 
+/*
+ * Initialize material model functions
+ */
+static void solver_create_model_params(fea_solver_ptr self);
+
 /* Allocates memory and construct elements database for solver */
 static void solver_create_element_database(fea_solver_ptr self);
 /* Destructor for the element database */
 static void solver_free_element_database(fea_solver_ptr self);
-
-/*
- * Constructs material tensor of 4th rank
- * by given deformation gradient graddef into the output array
- * ctensor
- */
-static void solver_ctensor(fea_solver_ptr self,
-                           real (*graddef)[MAX_DOF],
-                           real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
 
 /*
  * Returns a particular component of a node with local index 'node'
@@ -931,7 +953,7 @@ void solve( fea_task_ptr task,
   /* initialize variables */
   fea_solver_ptr solver = (fea_solver_ptr)0;
   char filename[50];
-  int it = 0;
+  int it = 0,load = 1;
   real tolerance;
   sp_matrix stiffness;
 #ifdef DUMP_DATA
@@ -958,69 +980,75 @@ void solve( fea_task_ptr task,
   solver_create_initial_shape_gradients(solver);
 
   /* Increment loop starts here */
-  solver_update_nodes_with_bc(solver, 1);
-
-  /* Create an array of shape functions gradients in current configuration */
-  solver_create_current_shape_gradients(solver);
-  /* create stresses in order to use them in residual forces and in
-   * initial stress component of the stiffness matrix */
-  solver_create_stresses(solver);
-
-  /* create global stiffness matrix K */
-  solver_create_stiffness(solver);
-  /* store global stiffness matrix for modified Newton method */
-  copy_sp_matrix(&solver->global_mtx,&stiffness);
-  do 
+  for (; load < solver->task_p->load_increments_count; ++ load)
   {
-    it ++;
+    it = 0;
+    /* apply prescribed displacements */
+    solver_update_nodes_with_bc(solver, 1);
 
-    /* create right-side vector of residual forces (-R) */
-    solver_create_residual_forces(solver);
-
-    /* create global stiffness matrix K */
-    if (solver->task_p->modified_newton) 
-    {
-      /*
-       * use stored  stiffness matrix in
-       * modified Newton method
-       */
-      free_sp_matrix(&solver->global_mtx);
-      copy_sp_matrix(&stiffness,&solver->global_mtx);
-    }
-    else                        
-    {
-      /* create global stiffness otherwise */
-      solver_create_stiffness(solver);
-    }
-    /* apply prescribed boundary conditions */
-    solver_apply_prescribed_bc(solver,0);
-
-    /* solve global equation system K*u=-R */
-    sp_matrix_solve(&solver->global_mtx,
-                    solver->global_forces_vct,
-                    solver->global_solution_vct);
-    /* check for convergence */
-
-    tolerance = cdot(solver->global_forces_vct,
-                     solver->global_solution_vct,
-                     solver->global_mtx.rows_count);
-    
-    printf("Tolerance <X,R> = %e\n",tolerance);
-    printf("Iteration %d finished\n",it);
-    
-    /* update nodes array with solution */
-    solver_update_nodes_with_solution(solver,solver->global_solution_vct);
+    /* Create an array of shape functions gradients in current configuration */
     solver_create_current_shape_gradients(solver);
+    /* create stresses in order to use them in residual forces and in
+     * initial stress component of the stiffness matrix */
     solver_create_stresses(solver);
 
-  } while ( fabs(tolerance) > 1e-8 && it < 30);
-  /* export solution */
-  sprintf(filename,"deformed%d.msh",it);
-  solver->export(solver,filename);
+    /* create global stiffness matrix K */
+    solver_create_stiffness(solver);
+    /* store global stiffness matrix for modified Newton method */
+    copy_sp_matrix(&solver->global_mtx,&stiffness);
+    do 
+    {
+      it ++;
 
-  /* clear stored stiffness matrix */
-  free_sp_matrix(&stiffness);
+      /* create right-side vector of residual forces (-R) */
+      solver_create_residual_forces(solver);
 
+      /* create global stiffness matrix K */
+      if (solver->task_p->modified_newton) 
+      {
+        /*
+         * use stored  stiffness matrix in
+         * modified Newton method
+         */
+        free_sp_matrix(&solver->global_mtx);
+        copy_sp_matrix(&stiffness,&solver->global_mtx);
+      }
+      else                        
+      {
+        /* create global stiffness otherwise */
+        solver_create_stiffness(solver);
+      }
+      /* apply prescribed boundary conditions */
+      solver_apply_prescribed_bc(solver,0);
+
+      /* solve global equation system K*u=-R */
+      sp_matrix_solve(&solver->global_mtx,
+                      solver->global_forces_vct,
+                      solver->global_solution_vct);
+      /* check for convergence */
+
+      tolerance = cdot(solver->global_forces_vct,
+                       solver->global_solution_vct,
+                       solver->global_mtx.rows_count);
+    
+      printf("Tolerance <X,R> = %e\n",tolerance);
+      printf("Newton iteration %d finished\n",it);
+    
+      /* update nodes array with solution */
+      solver_update_nodes_with_solution(solver,solver->global_solution_vct);
+      solver_create_current_shape_gradients(solver);
+      solver_create_stresses(solver);
+
+    } while ( fabs(tolerance) > solver->task_p->desired_tolerance);
+    /* export solution */
+    sprintf(filename,"deformed%d.msh",load);
+    solver->export(solver,filename);
+
+    /* clear stored stiffness matrix */
+    free_sp_matrix(&stiffness);
+    printf("Load increment %d finished\n",load);
+  }
+  
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
 }
@@ -1942,7 +1970,8 @@ fea_solver* new_fea_solver(fea_task_ptr task,
 
   solver->elements_db.gauss_nodes = (gauss_node**)0;
   solver_create_element_params(solver);
-
+  solver_create_model_params(solver);
+  
   /* initialize an array of gradients of shape functions per
    * element/gauss node and arrays of deformation gradients/stresses */
   elnum = elements->elements_count;
@@ -2133,51 +2162,6 @@ void solver_create_element_params(fea_solver_ptr solver)
   };
   
 }
-#ifdef DUMP_DATA
-static void solver_dump_shape_gradients(fea_solver_ptr self,
-                                        shape_gradients* grads,
-                                        int element,
-                                        int gauss,
-                                        real (*J)[MAX_DOF])
-{
-  int i,j;
-  FILE* f;
-  if ((f = fopen("gradients.txt","w+")))
-  {
-    fprintf(f,"\nElement %d:\n",element);
-    for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
-      fprintf(f,"%d ",self->elements_p->elements[element][j]);
-    fprintf(f,"\nNodes:\n");
-    for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
-    {
-      for ( i = 0; i < MAX_DOF; ++ i)
-        fprintf(f,"%f ",
-                self->nodes_p->nodes[self->elements_p->elements[element][j]][i]);
-      fprintf(f,"\n");
-    }
-    fprintf(f,"\nGauss node %d:\n",gauss);
-    for ( i = 0; i < MAX_DOF; ++ i)
-      fprintf(f,"%f ",self->elements_db.gauss_nodes_data[gauss][i+1]);
-    fprintf(f,"\n\nDeterminant of Jacobi matrix(det(J): %f\n",grads->detJ);
-    
-    fprintf(f,"\nInverse Jacobi matrix(J^-1):\n");
-    for ( i = 0; i < MAX_DOF; ++ i)
-    {
-      for ( j = 0; j < MAX_DOF; ++ j)
-        fprintf(f,"%f ",J[i][j]);
-      fprintf(f,"\n");
-    }
-    fprintf(f,"\nMatrix of gradients:\n");
-    for ( i = 0; i < MAX_DOF; ++ i)
-    {
-      for ( j = 0; j < self->fea_params_p->nodes_per_element; ++ j)
-        fprintf(f,"%.5f ",grads->grads[i][j]);
-      fprintf(f,"\n");
-    }
-    fclose(f);
-  }
-}
-#endif
 
 shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
                                                nodes_array_ptr nodes,
@@ -2242,10 +2226,6 @@ shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
         for ( k = 0; k < MAX_DOF; ++ k)
           grads->grads[i][j] += J[i][k]* \
             self->elements_db.gauss_nodes[gauss]->dforms[k][j];
-#ifdef DUMP_DATA
-    /* Dump results */
-    solver_dump_shape_gradients(self,grads,element,gauss,J);
-#endif
   }
 
   return grads;
@@ -2310,27 +2290,6 @@ void matrix_tensor_mapping(int I, int* i, int* j)
   }
 }
 
-void dump_ctensor_asp_matrix(real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
-{
-  int I,J;
-  int i = 0, j = 0, k = 0, l = 0;
-  FILE* f;
-  if ((f = fopen("ctensor.txt","w+")))
-  {
-    fprintf(f,"\nConstitutive matrix:\n"); 
-    for (I = 0; I < 6; ++ I)
-    {
-      matrix_tensor_mapping(I,&i,&j);
-      for (J = 0; J < 6;++ J)
-      {
-        matrix_tensor_mapping(J,&k,&l);
-        fprintf(f,"%f ",ctensor[i][j][k][l]);
-      }
-      fprintf(f,"\n");
-    }
-    fclose(f);
-  }
-}
 #endif
 
 
@@ -2461,12 +2420,7 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
     stiff[i] = (real*)malloc(sizeof(real)*size);
     memset(stiff[i],0,sizeof(real)*size);
   }
-  
-  
-#ifdef DUMP_DATA  
-  dump_ctensor_asp_matrix(ctens);
-#endif
-  
+    
   dof = self->task_p->dof;
   nelem = self->fea_params_p->nodes_per_element;
   
@@ -2474,7 +2428,7 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     /* obtain a C tensor */
-    solver_ctensor(self,self->graddefs[element][gauss].components,ctens);
+    self->ctensor(self,self->graddefs[element][gauss].components,ctens);
 
     grads = self->shape_gradients[element][gauss];
     if (grads)
@@ -2728,27 +2682,23 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
 #endif /* CURRENT_SHAPE_GRADIENTS */
 }
 
-
-void solver_element_gauss_stress(fea_solver_ptr self,
-                                 int element,
-                                 int gauss,
-                                 real graddef_tensor[MAX_DOF][MAX_DOF],
-                                 real stress_tensor[MAX_DOF][MAX_DOF])
+void solver_element_gauss_stress_A5(fea_solver_ptr self,
+                                    int element,
+                                    int gauss,
+                                    real F[MAX_DOF][MAX_DOF],
+                                    real stress_tensor[MAX_DOF][MAX_DOF])
 {
   int i,j,k;
-  real F[MAX_DOF][MAX_DOF];
   real C[MAX_DOF][MAX_DOF];
   real G[MAX_DOF][MAX_DOF];
   real Sn[MAX_DOF][MAX_DOF];
   real lambda,mu;
   real detF = 0;
   real I1 = 0;
+
   lambda = self->task_p->model.parameters[0];
   mu = self->task_p->model.parameters[1];
   
-  /* get deformation gradient */
-  solver_element_gauss_graddef(self,element,gauss,F);
-
   /* G = F'*F */
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
@@ -2785,16 +2735,56 @@ void solver_element_gauss_stress(fea_solver_ptr self,
   matrix_mul3x3(F,Sn,C);
   /* 2) S = C*F' */
   matrix_transpose2_mul3x3(C,F,stress_tensor);
+}
+
+void solver_element_gauss_stress_compr_neohookean(fea_solver_ptr self,
+                                                  int element,
+                                                  int gauss,
+                                                  real F[MAX_DOF][MAX_DOF],
+                                                  real S[MAX_DOF][MAX_DOF])
+{
+  int i,j,k;
+  real B[MAX_DOF][MAX_DOF];
+  real lambda,mu;
+  real J = det3x3(F);
+
+  lambda = self->task_p->model.parameters[0];
+  mu = self->task_p->model.parameters[1];
+  
+  /* B = F*F' */
   for (i = 0; i < MAX_DOF; ++ i)
     for (j = 0; j < MAX_DOF; ++ j)
     {
-      graddef_tensor[i][j] = F[i][j];
+      B[i][j] = 0;
+      for ( k = 0; k < MAX_DOF; ++ k)
+        B[i][j] += F[i][k]*F[j][k];
+    }
+
+  /* S = mu/J*(B-E)+lambda/J*log(J)*E; */
+  for (i = 0; i < MAX_DOF; ++ i)
+    for (j = 0; j < MAX_DOF; ++ j)
+    {
+      S[i][j] = mu*(B[i][j]-DELTA(i,j))/J + 
+        lambda*log(J)*DELTA(i,j)/J;
     }
 }
 
 
+void solver_element_gauss_stress(fea_solver_ptr self,
+                                 int element,
+                                 int gauss,
+                                 real graddef_tensor[MAX_DOF][MAX_DOF],
+                                 real stress_tensor[MAX_DOF][MAX_DOF])
+  
+{
+  /* get deformation gradient */
+  solver_element_gauss_graddef(self,element,gauss,graddef_tensor);
+  self->element_gauss_stress(self,element,gauss,
+                             graddef_tensor,stress_tensor);
+}
 
-void solver_ctensor(fea_solver_ptr self,
+
+void solver_ctensor_A5(fea_solver_ptr self,
                     real (*graddef)[MAX_DOF],
                     real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
@@ -2812,6 +2802,28 @@ void solver_ctensor(fea_solver_ptr self,
               + mu * DELTA (i, k) * DELTA (j, l)    \
               + mu * DELTA (i, l) * DELTA (j, k) ) / detF;
 }
+
+void solver_ctensor_compr_neohookean(fea_solver_ptr self,
+                                     real (*graddef)[MAX_DOF],
+                                     real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+{
+  int i,j,k,l;
+  real lambda,mu,lambda1,mu1;
+  real J = det3x3(graddef);
+  lambda = self->task_p->model.parameters[0];
+  mu = self->task_p->model.parameters[1];
+  lambda1 = lambda/J;
+  mu1 = (mu - lambda*log(J))/J;
+  for ( i = 0; i < MAX_DOF; ++ i )
+    for ( j = 0; j < MAX_DOF; ++ j )
+      for ( k = 0; k < MAX_DOF; ++ k )
+        for ( l = 0; l < MAX_DOF; ++ l )
+          ctensor[i][j][k][l] = 
+            lambda1 * DELTA (i, j) * DELTA (k, l)    \
+            + 2*mu1 * DELTA (i, k) * DELTA (j, l);
+  
+}
+
 
 void solver_create_forces_bc(fea_solver_ptr self)
 {
@@ -3139,6 +3151,26 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
     fclose(f);
   }
 }
+                
+void solver_create_model_params(fea_solver_ptr self)
+{
+  switch(self->task_p->model.model)
+  {
+  case MODEL_A5:
+    self->element_gauss_stress = solver_element_gauss_stress_A5;
+    self->ctensor = solver_ctensor_A5;
+    break;
+  case MODEL_COMPRESSIBLE_NEOHOOKEAN:
+    self->element_gauss_stress =
+      solver_element_gauss_stress_compr_neohookean;
+    self->ctensor = solver_ctensor_compr_neohookean;
+    break;
+  default:
+    assert(FALSE);
+  };
+
+}
+
 
 
 void solver_create_element_params_tetrahedra10(fea_solver* solver)
@@ -3671,8 +3703,14 @@ void process_model_type(parse_data* data, const XML_Char **atts)
         data->task->model.model = MODEL_A5;
         data->task->model.parameters_count = 2;
       }
+      else if (!istrcmp(text,"COMPRESSIBLE_NEOHOOKEAN"))
+      {
+        data->task->model.model = MODEL_COMPRESSIBLE_NEOHOOKEAN;
+        data->task->model.parameters_count = 2;
+      }
       else
       {
+        
         printf("unknown model type %s\n",text);
       }
       if(text)
