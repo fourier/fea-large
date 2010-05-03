@@ -861,7 +861,7 @@ static void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda);
 
 
 /*************************************************************/
-/* Auxulary functions                                        */
+/* Functions for operating on matrix 3x3                     */
 
 /* Calculates the determinant of the matrix 3x3 */
 real det3x3(real (*matrix3x3)[3]);
