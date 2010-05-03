@@ -289,6 +289,27 @@ typedef struct tensor_tag {
 typedef tensor* tensor_ptr;
 
 /*
+ * Load increment step structure.
+ * This structure holds all information needed on the current
+ * load increment step
+ */
+typedef struct load_step_tag {
+  int step_number;
+  nodes_array_ptr nodes_p;      /* nodes in current configuration for step */
+  tensor **graddefs;            /* Components of Deformation gradient tensor
+                                 * in gauss nodes
+                                 * array [number of elems] x [gauss nodes]
+                                 */
+  tensor **stresses;            /* Components of Cauchy stress tensor
+                                 * in gauss nodes
+                                 * array [number of elems] x [gauss nodes]
+                                 */
+} load_step;
+typedef load_step* load_step_ptr;
+  
+  
+
+/*
  * Sparse matrix row/column storage array
  */
 typedef struct indexed_array_tag {
@@ -350,6 +371,19 @@ typedef sp_matrix_skyline_ilu* sp_matrix_skyline_ilu_ptr;
  * data necessary for solution
  */
 typedef struct fea_solver_tag {
+  disoform_t dshape;              /* a function pointer to derivative of the
+                                   * shape function */
+  isoform_t shape;                /* a function pointer to the shape
+                                   * function */
+  element_gauss_stress_t element_gauss_stress; /* a pointer to the function
+                                                * for calculation of the
+                                                * model-specific Cauchy
+                                                * in gauss nodes per element */
+  solver_ctensor_t ctensor; /* a function pointer to the C elasticity
+                             * tensor
+                             */
+  export_solution_t export;     /* a pointer to the export function */
+
   fea_task_ptr task_p;               
   fea_solution_params_ptr fea_params_p; 
   nodes_array_ptr nodes0_p;
@@ -383,20 +417,12 @@ typedef struct fea_solver_tag {
                                  * in gauss nodes
                                  * array [number of elems] x [gauss nodes]
                                  */
-  
-  disoform_t dshape;              /* a function pointer to derivative of the
-                                   * shape function */
-  isoform_t shape;                /* a function pointer to the shape
-                                   * function */
-  element_gauss_stress_t element_gauss_stress; /* a pointer to the function
-                                                * for calculation of the
-                                                * model-specific Cauchy
-                                                * in gauss nodes per element */
-  solver_ctensor_t ctensor; /* a function pointer to the C elasticity
-                                    * tensor
-                                    */
-  export_solution_t export;     /* a pointer to the export function */
-
+  int current_load_step;
+  load_step_ptr load_steps_p;   /* an array of stored load steps data
+                                 * array size is task_p->load_increments_count
+                                 * load_steps_p[0..current_load_step] shall be
+                                 * filled during load steps iterations
+                                 */
   sp_matrix global_mtx;         /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_reactions_vct;   /* reactions in fixed dofs */
@@ -479,6 +505,21 @@ static shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
 static void solver_free_shape_gradients(fea_solver_ptr self,
                                         shape_gradients_ptr grads);
 
+/*
+ * Constructor for the load step structure
+ * It doesn't allocate a memory for a step itself,
+ * just initializes the internal structures
+ */
+static void init_load_step(fea_solver_ptr self,
+                           load_step_ptr step,
+                           int step_number);
+            
+/*
+ * Desctructor for the load step structure.
+ * it doesn't deallocate a memory for a step itself,
+ * just frees all step internal structures
+ */
+static void free_load_step(fea_solver_ptr self, load_step_ptr step);
 
 
 /*************************************************************/
@@ -855,7 +896,7 @@ static void solver_update_nodes_with_solution(fea_solver_ptr self,
 
 /*
  * Update solver->nodes array with prescribed displacements
- * lambda - multipler for prescribed displacements
+ * lambda - multiplier for prescribed displacements
  */
 static void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda);
 
@@ -953,7 +994,7 @@ void solve( fea_task_ptr task,
   /* initialize variables */
   fea_solver_ptr solver = (fea_solver_ptr)0;
   char filename[50];
-  int it = 0,load = 1;
+  int it = 0;
   real tolerance;
   sp_matrix stiffness;
 #ifdef DUMP_DATA
@@ -980,7 +1021,8 @@ void solve( fea_task_ptr task,
   solver_create_initial_shape_gradients(solver);
 
   /* Increment loop starts here */
-  for (; load < solver->task_p->load_increments_count; ++ load)
+  for (; solver->current_load_step < solver->task_p->load_increments_count;
+       ++ solver->current_load_step)
   {
     it = 0;
     /* apply prescribed displacements */
@@ -1040,13 +1082,17 @@ void solve( fea_task_ptr task,
       solver_create_stresses(solver);
 
     } while ( fabs(tolerance) > solver->task_p->desired_tolerance);
+    /* store current load step */
+    init_load_step(solver,
+                   &solver->load_steps_p[solver->current_load_step],
+                   solver->current_load_step);
     /* export solution */
-    sprintf(filename,"deformed%d.msh",load);
+    sprintf(filename,"deformed%d.msh",solver->current_load_step);
     solver->export(solver,filename);
 
     /* clear stored stiffness matrix */
     free_sp_matrix(&stiffness);
-    printf("Load increment %d finished\n",load);
+    printf("Load increment %d finished\n",solver->current_load_step);
   }
   
   free_fea_solver(solver);
@@ -2001,7 +2047,9 @@ fea_solver* new_fea_solver(fea_task_ptr task,
         }
     }
   }
-  
+  solver->current_load_step = 0;
+  solver->load_steps_p = (load_step_ptr)malloc(sizeof(load_step)*
+                                               task->load_increments_count);
   /* allocate resources initialize global stiffness matrix */
   /* global matrix size */
   msize = nodes->nodes_count*solver->task_p->dof;
@@ -2043,6 +2091,10 @@ void free_fea_solver(fea_solver_ptr solver)
   free(solver->shape_gradients);  
   free(solver->stresses);
   free(solver->graddefs);
+  /* free stored load steps */
+  for ( i = 0; i < solver->current_load_step; ++ i)
+    free_load_step(solver, &solver->load_steps_p[i]);
+  free(solver->load_steps_p);
   /* deallocate all other resources */
   solver_free_element_database(solver);
   free_fea_task(solver->task_p);
@@ -2162,6 +2214,56 @@ void solver_create_element_params(fea_solver_ptr solver)
   };
   
 }
+
+void init_load_step(fea_solver_ptr self,
+                    load_step_ptr step,
+                    int step_number)
+{
+  int elnum = self->elements_p->elements_count;
+  int gauss_count = self->fea_params_p->gauss_nodes_count;
+  int i,j,k,l;
+  if (step)
+  {
+    step->step_number = step_number;
+    step->nodes_p = new_copy_nodes_array(self->nodes_p);
+    step->stresses = malloc(sizeof(tensor*)*elnum);
+    step->graddefs = malloc(sizeof(tensor*)*elnum);
+
+    for (i = 0; i < elnum; ++ i)
+    {
+      step->stresses[i] = malloc(sizeof(tensor)*gauss_count);
+      step->graddefs[i] = malloc(sizeof(tensor)*gauss_count);    
+      for (j = 0; j < gauss_count; ++ j)
+      {
+        for ( k = 0; k < MAX_DOF; ++ k)
+          for (l = 0; l < MAX_DOF; ++ l)
+          {
+            step->stresses[i][j].components[k][l] =
+              self->stresses[i][j].components[k][l];
+            step->graddefs[i][j].components[k][l] =
+              self->graddefs[i][j].components[k][l];
+          }
+      }
+    }
+  }
+}
+
+void free_load_step(fea_solver_ptr self, load_step_ptr step)
+{
+  int elnum = self->elements_p->elements_count;
+  int i;
+  if (step)
+  {
+    for (i = 0; i < elnum; ++ i)
+    {
+      free(step->stresses[i]);
+      free(step->graddefs[i]);
+    }
+    free(step->stresses);
+    free(step->graddefs);
+  }
+}
+
 
 shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
                                                nodes_array_ptr nodes,
