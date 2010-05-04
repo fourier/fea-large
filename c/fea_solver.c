@@ -2261,6 +2261,7 @@ void free_load_step(fea_solver_ptr self, load_step_ptr step)
     }
     free(step->stresses);
     free(step->graddefs);
+    free_nodes_array(step->nodes_p);
   }
 }
 
