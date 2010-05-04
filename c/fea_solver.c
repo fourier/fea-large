@@ -1086,14 +1086,13 @@ void solve( fea_task_ptr task,
     init_load_step(solver,
                    &solver->load_steps_p[solver->current_load_step],
                    solver->current_load_step);
-    /* export solution */
-    sprintf(filename,"deformed%d.msh",solver->current_load_step);
-    solver->export(solver,filename);
 
     /* clear stored stiffness matrix */
     free_sp_matrix(&stiffness);
     printf("Load increment %d finished\n",solver->current_load_step);
   }
+  /* export solution */
+  solver->export(solver,"deformed.msh");
   
   free_fea_solver(solver);
   global_solver = (fea_solver*)0;
@@ -3180,6 +3179,7 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
    */
   FILE* f;
   int i,j,k;
+  int load;
  
   f = fopen(filename,"w+");
   if ( f )
@@ -3212,45 +3212,48 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
     }
     fprintf(f,"$EndElements\n");
     
-    /* Export displacements */
-    fprintf(f,"$NodeData\n");
-    fprintf(f,"1\n");
-    fprintf(f,"\"Displacements\"\n");
-    fprintf(f,"1\n");           /* number-of-real-tags */
-    fprintf(f,"0.0\n");         /* timestamp */
-    fprintf(f,"3\n");           /* number-of-integer-tags */
-    fprintf(f,"0\n");           /* step index (starting at 0) */
-    fprintf(f,"3\n");           /* number of field components (1, 3 or 9)*/
-    /* number of entities */
-    fprintf(f,"%d\n",solver->nodes_p->nodes_count);
-    for (i = 0; i < solver->nodes_p->nodes_count; ++ i)
-      fprintf(f,"%d %f %f %f\n",i+1,
-              solver->nodes_p->nodes[i][0] - solver->nodes0_p->nodes[i][0],
-              solver->nodes_p->nodes[i][1] - solver->nodes0_p->nodes[i][1],
-              solver->nodes_p->nodes[i][2] - solver->nodes0_p->nodes[i][2]);
-    fprintf(f,"$EndNodeData\n");
-    
-    /* Export stresses */
-    fprintf(f,"$ElementData\n");
-    fprintf(f,"1\n");           /* number-of-string-tags */
-    fprintf(f,"\"Stress tensor\"\n"); /* string tag */
-    fprintf(f,"1\n");           /* number-of-real-tags */
-    fprintf(f,"0.0\n");         /* timestamp */
-    fprintf(f,"3\n");           /* number-of-integer-tags */
-    fprintf(f,"0\n");           /* step index (starting at 0) */
-    fprintf(f,"9\n");           /* number of field components (1, 3 or 9)*/
-    /* number of entities */
-    fprintf(f,"%d\n",solver->elements_p->elements_count);
-    for (i = 0; i < solver->elements_p->elements_count; ++ i)
+    /* loop by load increments */
+    for ( load = 0; load < solver->current_load_step; ++ load)
     {
-      fprintf(f,"%d ",i+1);     /* element index */
-      for ( j = 0; j < MAX_DOF; ++ j)
-        for ( k = 0; k < MAX_DOF; ++ k)
-        fprintf(f,"%f ",solver->stresses[i][0].components[j][k]); 
-      fprintf(f,"\n");
+      /* Export displacements */
+      fprintf(f,"$NodeData\n");
+      fprintf(f,"1\n");
+      fprintf(f,"\"Displacements\"\n");
+      fprintf(f,"1\n");           /* number-of-real-tags */
+      fprintf(f,"%f\n", (load+1)*0.05);    /* timestamp */
+      fprintf(f,"3\n");           /* number-of-integer-tags */
+      fprintf(f,"%d\n",load);           /* step index (starting at 0) */
+      fprintf(f,"3\n");           /* number of field components (1, 3 or 9)*/
+      /* number of entities */
+      fprintf(f,"%d\n",solver->nodes_p->nodes_count);
+      for (i = 0; i < solver->nodes_p->nodes_count; ++ i)
+        fprintf(f,"%d %f %f %f\n",i+1,
+                solver->load_steps_p[load].nodes_p->nodes[i][0] - solver->nodes0_p->nodes[i][0],
+                solver->load_steps_p[load].nodes_p->nodes[i][1] - solver->nodes0_p->nodes[i][1],
+                solver->load_steps_p[load].nodes_p->nodes[i][2] - solver->nodes0_p->nodes[i][2]);
+      fprintf(f,"$EndNodeData\n");
+    
+      /* Export stresses */
+      fprintf(f,"$ElementData\n");
+      fprintf(f,"1\n");           /* number-of-string-tags */
+      fprintf(f,"\"Stress tensor\"\n"); /* string tag */
+      fprintf(f,"1\n");           /* number-of-real-tags */
+      fprintf(f,"%f\n",(load+1)*0.05);         /* timestamp */
+      fprintf(f,"3\n");           /* number-of-integer-tags */
+      fprintf(f,"%d\n",load);           /* step index (starting at 0) */
+      fprintf(f,"9\n");           /* number of field components (1, 3 or 9)*/
+      /* number of entities */
+      fprintf(f,"%d\n",solver->elements_p->elements_count);
+      for (i = 0; i < solver->elements_p->elements_count; ++ i)
+      {
+        fprintf(f,"%d ",i+1);     /* element index */
+        for ( j = 0; j < MAX_DOF; ++ j)
+          for ( k = 0; k < MAX_DOF; ++ k)
+            fprintf(f,"%f ",solver->stresses[i][0].components[j][k]); 
+        fprintf(f,"\n");
+      }
+      fprintf(f,"$EndElementData\n");
     }
-    fprintf(f,"$EndElementData\n");
-
     fclose(f);
   }
 }
