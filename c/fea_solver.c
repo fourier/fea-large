@@ -993,7 +993,6 @@ void solve( fea_task_ptr task,
 {
   /* initialize variables */
   fea_solver_ptr solver = (fea_solver_ptr)0;
-  char filename[50];
   int it = 0;
   real tolerance;
   sp_matrix stiffness;
@@ -1092,6 +1091,7 @@ void solve( fea_task_ptr task,
     printf("Load increment %d finished\n",solver->current_load_step);
   }
   /* export solution */
+  printf("Exporting data...\n");
   solver->export(solver,"deformed.msh");
   
   free_fea_solver(solver);
@@ -3213,24 +3213,27 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
     fprintf(f,"$EndElements\n");
     
     /* loop by load increments */
-    for ( load = 0; load < solver->current_load_step; ++ load)
+    for ( load = 0; load <= solver->current_load_step; ++ load)
     {
       /* Export displacements */
       fprintf(f,"$NodeData\n");
       fprintf(f,"1\n");
       fprintf(f,"\"Displacements\"\n");
       fprintf(f,"1\n");           /* number-of-real-tags */
-      fprintf(f,"%f\n", (load+1)*0.05);    /* timestamp */
+      fprintf(f,"%f\n", load*0.05);    /* timestamp */
       fprintf(f,"3\n");           /* number-of-integer-tags */
-      fprintf(f,"%d\n",load);           /* step index (starting at 0) */
+      fprintf(f,"%d\n", load);           /* step index (starting at 0) */
       fprintf(f,"3\n");           /* number of field components (1, 3 or 9)*/
       /* number of entities */
       fprintf(f,"%d\n",solver->nodes_p->nodes_count);
       for (i = 0; i < solver->nodes_p->nodes_count; ++ i)
         fprintf(f,"%d %f %f %f\n",i+1,
-                solver->load_steps_p[load].nodes_p->nodes[i][0] - solver->nodes0_p->nodes[i][0],
-                solver->load_steps_p[load].nodes_p->nodes[i][1] - solver->nodes0_p->nodes[i][1],
-                solver->load_steps_p[load].nodes_p->nodes[i][2] - solver->nodes0_p->nodes[i][2]);
+                load ? solver->load_steps_p[load-1].nodes_p->nodes[i][0] -
+                solver->nodes0_p->nodes[i][0] : 0.0,
+                load ? solver->load_steps_p[load-1].nodes_p->nodes[i][1] -
+                solver->nodes0_p->nodes[i][1] : 0.0,
+                load ? solver->load_steps_p[load-1].nodes_p->nodes[i][2] -
+                solver->nodes0_p->nodes[i][2] : 0.0);
       fprintf(f,"$EndNodeData\n");
     
       /* Export stresses */
@@ -3238,7 +3241,7 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
       fprintf(f,"1\n");           /* number-of-string-tags */
       fprintf(f,"\"Stress tensor\"\n"); /* string tag */
       fprintf(f,"1\n");           /* number-of-real-tags */
-      fprintf(f,"%f\n",(load+1)*0.05);         /* timestamp */
+      fprintf(f,"%f\n",load*0.05);         /* timestamp */
       fprintf(f,"3\n");           /* number-of-integer-tags */
       fprintf(f,"%d\n",load);           /* step index (starting at 0) */
       fprintf(f,"9\n");           /* number of field components (1, 3 or 9)*/
@@ -3249,7 +3252,9 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
         fprintf(f,"%d ",i+1);     /* element index */
         for ( j = 0; j < MAX_DOF; ++ j)
           for ( k = 0; k < MAX_DOF; ++ k)
-            fprintf(f,"%f ",solver->stresses[i][0].components[j][k]); 
+            fprintf(f,"%f ", load ?
+                    solver->load_steps_p[load-1].stresses[i][0].components[j][k]
+                    : 0.0); 
         fprintf(f,"\n");
       }
       fprintf(f,"$EndElementData\n");
