@@ -3220,7 +3220,7 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
       fprintf(f,"1\n");
       fprintf(f,"\"Displacements\"\n");
       fprintf(f,"1\n");           /* number-of-real-tags */
-      fprintf(f,"%f\n", load*0.05);    /* timestamp */
+      fprintf(f,"%f\n", load*0.83333333);    /* timestamp */
       fprintf(f,"3\n");           /* number-of-integer-tags */
       fprintf(f,"%d\n", load);           /* step index (starting at 0) */
       fprintf(f,"3\n");           /* number of field components (1, 3 or 9)*/
@@ -3241,10 +3241,10 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
       fprintf(f,"1\n");           /* number-of-string-tags */
       fprintf(f,"\"Stress tensor\"\n"); /* string tag */
       fprintf(f,"1\n");           /* number-of-real-tags */
-      fprintf(f,"%f\n",load*0.05);         /* timestamp */
+      fprintf(f,"%f\n",load*0.83333333);         /* timestamp */
       fprintf(f,"3\n");           /* number-of-integer-tags */
       fprintf(f,"%d\n",load);           /* step index (starting at 0) */
-      fprintf(f,"9\n");           /* number of field components (1, 3 or 9)*/
+      fprintf(f,"9\n");           /* number of field components (1, 3 or 9) */
       /* number of entities */
       fprintf(f,"%d\n",solver->elements_p->elements_count);
       for (i = 0; i < solver->elements_p->elements_count; ++ i)
