@@ -398,7 +398,7 @@ typedef struct fea_solver_tag {
                                            * shape functios per element
                                            * per gauss node in initial
                                            * configuration
-                                           * [number of elems] x [gauss nodes]
+                                           * [number of elems] x [gauss nodes]  
                                            */
   shape_gradients_ptr **shape_gradients; /* an array of gradients of
                                           * shape functios per element
@@ -1008,7 +1008,8 @@ void solve( fea_task_ptr task,
                           presc_boundary);
 #ifdef DUMP_DATA
   /* solver_update_nodes_with_bc(solver, 1); */
-  /* dump_input_data("input1.txt",task,fea_params,solver->nodes_p,elements,presc_boundary); */
+  /* dump_input_data("input1.txt",task,fea_params,solver->nodes_p,elements,
+     presc_boundary); */
 #endif
   
   /* backup solver to the global_solver for the case of emergency exit */
@@ -1139,7 +1140,8 @@ void dump_input_data( char* filename,
     fprintf(f,"boundary\n");
     for ( i = 0; i < presc_boundary->prescribed_nodes_count; ++ i)
     {
-      fprintf(f,"%d %f %f %f %d\n",presc_boundary->prescribed_nodes[i].node_number,
+      fprintf(f,"%d %f %f %f %d\n",
+              presc_boundary->prescribed_nodes[i].node_number,
               presc_boundary->prescribed_nodes[i].values[0],
               presc_boundary->prescribed_nodes[i].values[1],
               presc_boundary->prescribed_nodes[i].values[2],
@@ -1523,7 +1525,8 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
     tol += r[i]*r[i];
   tol = sqrt(tol);
 
-  printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n",max_iter,tolerance,tol);
+  printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n",
+         max_iter,tolerance,tol);
   free(r);
 }
 
@@ -3742,7 +3745,8 @@ static BOOL expat_data_load(char *filename,
   /* Create parser */
   parser = XML_ParserCreate(NULL);
   /* Set handlers */
-  XML_SetElementHandler(parser, &expat_start_tag_handler, &expat_end_tag_handler);
+  XML_SetElementHandler(parser, &expat_start_tag_handler,
+                        &expat_end_tag_handler);
   XML_SetCharacterDataHandler(parser,expat_text_handler);
 
   /* initialize data */
@@ -3855,7 +3859,8 @@ void process_solution(parse_data* data, const XML_Char **atts)
     if (check_attribute("modified-newton",&atts))
     {
       text = trim_whitespaces(*atts,strlen(*atts));
-      data->task->modified_newton = (!istrcmp(text,"yes") || !istrcmp(text,"true"))? TRUE: FALSE;
+      data->task->modified_newton =
+        (!istrcmp(text,"yes") || !istrcmp(text,"true"))? TRUE: FALSE;
       if (text)
         free(text);
     }
@@ -4115,9 +4120,10 @@ void process_prescribed_displacements(parse_data* data, const XML_Char **atts)
         text = trim_whitespaces(*atts,strlen(*atts));
         data->presc_boundary->prescribed_nodes_count = atoi(text);
         size = data->presc_boundary->prescribed_nodes_count;
+        size = size*sizeof(prescibed_boundary_node);
         /* allocate storage for prescribed nodes */
-        data->presc_boundary->prescribed_nodes =  
-          (prescibed_boundary_node*)malloc(size*sizeof(prescibed_boundary_node));
+        data->presc_boundary->prescribed_nodes =
+          (prescibed_boundary_node*)malloc(size);
         if (text) free(text);
       }
     }
@@ -4289,7 +4295,8 @@ BOOL initial_data_load(char *filename,
 {
   BOOL result = FALSE;
 #ifdef USE_EXPAT
-  result = expat_data_load(filename,task,fea_params,nodes,elements,presc_boundary);
+  result = expat_data_load(filename,task,fea_params,nodes,elements,
+                           presc_boundary);
 #endif
   return result;
 }
@@ -4481,7 +4488,6 @@ BOOL test_ilu()
   free_sp_matrix_skyline_ilu(&ILU);
   return result;
 }
-
 
 
 BOOL do_tests()
