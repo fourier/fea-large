@@ -257,7 +257,7 @@ typedef gauss_node* gauss_node_ptr;
  */
 typedef struct elements_database_tag {
   real (*gauss_nodes_data)[4];  /* pointer to an array of gauss
-                                   * coefficients and weights */  
+                                 * coefficients and weights */  
   gauss_node_ptr *gauss_nodes;   /* Gauss nodes array */
 } elements_database;
 typedef elements_database* elements_database_ptr;
@@ -343,7 +343,7 @@ typedef struct sp_matrix_skyline_tag {
   int cols_count;
   int nonzeros;                 /* number of nonzero elements in matrix */
   int tr_nonzeros;  /* number of nonzero elements in
-                                 * upper or lower triangles */
+                     * upper or lower triangles */
   real *diag;                   /* rows_count elements in matrix diagonal */
   real *lower_triangle;         /* nonzero elements of the lower triangle */
   real *upper_triangle;         /* nonzero elements of the upper triangle */
@@ -593,8 +593,8 @@ static void sp_matrix_reorder(sp_matrix_ptr self);
 /*
  * Implements BLAS level 2 function SAXPY: y = A*x+b
  * All vectors shall be already allocated
-static void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
- */
+ static void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
+*/
 
 /* Matrix-vector multiplication
  * y = A*x*/
@@ -738,6 +738,8 @@ BOOL do_tests();
 BOOL test_solver();
 /* test ILU decomposition */
 BOOL test_ilu();
+/* test Cholesky decomposition */
+BOOL test_cholesky();
 
 /*
  * Solver function which shall be called
@@ -892,7 +894,7 @@ static void solver_update_node_with_bc(fea_solver_ptr self,
  * 2) create deformed configuration by applying prescribed displacements
  */
 static void solver_update_nodes_with_solution(fea_solver_ptr self,
-                                                   real* x);
+                                              real* x);
 
 /*
  * Update solver->nodes array with prescribed displacements
@@ -2424,10 +2426,10 @@ void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
         /* free previous shape gradients array */
         if (current)            /* current configuration */
         {
-        if ( self->shape_gradients[element][gauss] )
-          solver_free_shape_gradients(self,
-                                      self->shape_gradients[element][gauss]);
-        self->shape_gradients[element][gauss] = grads;
+          if ( self->shape_gradients[element][gauss] )
+            solver_free_shape_gradients(self,
+                                        self->shape_gradients[element][gauss]);
+          self->shape_gradients[element][gauss] = grads;
         }
         else                    /* initial configuration */
         {
@@ -2577,9 +2579,9 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
               globalI = self->elements_p->elements[element][a]*dof + i;
               globalJ = self->elements_p->elements[element][b]*dof + j;
               sp_matrix_element_add(&self->global_mtx,
-                                     globalI,
-                                     globalJ,
-                                     sum);
+                                    globalI,
+                                    globalJ,
+                                    sum);
             }
         }
     }
@@ -2666,9 +2668,9 @@ void solver_local_initial_stess_part(fea_solver_ptr self,int element)
               globalI = self->elements_p->elements[element][a]*dof + i;
               globalJ = self->elements_p->elements[element][b]*dof + j;
               sp_matrix_element_add(&self->global_mtx,
-                                     globalI,
-                                     globalJ,
-                                     sum);
+                                    globalI,
+                                    globalJ,
+                                    sum);
             }
         }
     }
@@ -2756,7 +2758,7 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
     for (j = 0; j < MAX_DOF; ++ j)
     {
       graddef[i][j] = 0;
-       for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
+      for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
         graddef[i][j] +=
           grads->grads[j][k] * 
           self->nodes0_p->nodes[self->elements_p->elements[element][k]][i];
@@ -2778,7 +2780,7 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
     for (j = 0; j < MAX_DOF; ++ j)
     {
       graddef[i][j] = 0;
-       for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
+      for (k = 0; k < self->fea_params_p->nodes_per_element; ++ k)
         graddef[i][j] +=
           self->shape_gradients0[element][gauss]->grads[j][k] *
           self->nodes_p->nodes[self->elements_p->elements[element][k]][i];
@@ -2890,8 +2892,8 @@ void solver_element_gauss_stress(fea_solver_ptr self,
 
 
 void solver_ctensor_A5(fea_solver_ptr self,
-                    real (*graddef)[MAX_DOF],
-                    real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+                       real (*graddef)[MAX_DOF],
+                       real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
   int i,j,k,l;
   real lambda,mu;
@@ -2950,7 +2952,7 @@ void solver_apply_bc_general(fea_solver_ptr self,apply_bc_t apply,real lambda)
   {
     node_number = self->presc_boundary_p->prescribed_nodes[i].node_number;
     for ( j = 0; j < MAX_DOF; ++ j)
-     presc[j] = self->presc_boundary_p->prescribed_nodes[i].values[j]*lambda;
+      presc[j] = self->presc_boundary_p->prescribed_nodes[i].values[j]*lambda;
     
     type = self->presc_boundary_p->prescribed_nodes[i].type;
 
@@ -3537,7 +3539,7 @@ void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
 
 /* Case-insensitive string comparsion procedure */
 int istrcmp(s1,s2)
-     const char *s1, *s2;
+  const char *s1, *s2;
 {
   /* case insensitive comparison */
   int d;
@@ -3651,8 +3653,8 @@ void process_end_tag(parse_data* data, int tag);
 
 /* Expat start tag handler */
 void expat_start_tag_handler(void *userData,
-                      const XML_Char *name,
-                      const XML_Char **atts)
+                             const XML_Char *name,
+                             const XML_Char **atts)
 {
   parse_data* data = (parse_data*)userData;
   int tag = tagname_to_enum(name);
@@ -3662,7 +3664,7 @@ void expat_start_tag_handler(void *userData,
 
 /* Expat End tag handler */
 void expat_end_tag_handler(void *userData,
-                   const XML_Char *name)
+                           const XML_Char *name)
 {
   parse_data* data = (parse_data*)userData;
   int tag = tagname_to_enum(name);
@@ -4135,7 +4137,7 @@ void process_prescribed_displacements(parse_data* data, const XML_Char **atts)
 /* node tag handler */
 void process_prescribed_node(parse_data* data, const XML_Char **atts)
 {
-  		/* <presc-node id="1" node-id="10" x="0" y="0" z="0" type="7"/> */
+  /* <presc-node id="1" node-id="10" x="0" y="0" z="0" type="7"/> */
   char* text = (char*)0;
   prescibed_boundary_node node;
   int id = -1;
@@ -4489,6 +4491,59 @@ BOOL test_ilu()
   return result;
 }
 
+BOOL test_cholesky()
+{
+  BOOL result = TRUE;
+  /* initial matrix */
+  /* {90, 6, 4, 46, 29, 0, 26}, */
+  /* {6, 127, 34, 22, 7, 0, 38}, */
+  /* {4, 34, 108, 40, 2, 0, 4}, */
+  /* {46, 22, 40, 96, 24, 0, 6}, */
+  /* {29, 7, 2, 24, 155, 0, 37}, */
+  /* {0, 0, 0, 0, 0, 64, 0}, */
+  /* {26, 38, 4, 6, 37, 0, 70} */
+  sp_matrix mtx;
+  sp_matrix_skyline m;
+
+  /* expected decomposition */
+  real cholesky_expected[7][7] = 
+    {{9.48683, 0.632456, 0.421637, 4.84883, 3.05687, 0., 2.74064},
+     {0.,11.2517, 2.99807, 1.68271, 0.450304, 0., 3.22323},
+     {0., 0., 9.94152,3.31043, -0.0642691, 0., -0.685914},
+     {0., 0., 0., 7.66149, 1.12678,0., -1.36292},
+     {0., 0., 0., 0., 12.0075, 0., 2.38705},
+     {0., 0., 0.,0., 0., 8., 0.},
+     {0., 0., 0., 0., 0., 0., 6.6388}};
+
+  /* fill initial matrix */
+  init_sp_matrix(&mtx,7,7,5);
+
+#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
+/* {90, 6, 4, 46, 29, 0, 26}, */
+  MTX(&mtx,0,0,90);MTX(&mtx,0,1,6);MTX(&mtx,0,2,4);MTX(&mtx,0,3,46);
+  MTX(&mtx,0,4,29);MTX(&mtx,0,6,26);
+/* {6, 127, 34, 22, 7, 0, 38}, */
+  MTX(&mtx,0,0,6);MTX(&mtx,0,1,127);MTX(&mtx,0,2,34);MTX(&mtx,0,3,22);
+  MTX(&mtx,0,4,7);MTX(&mtx,0,6,38);
+/* {4, 34, 108, 40, 2, 0, 4}, */
+  MTX(&mtx,0,0,4);MTX(&mtx,0,1,34);MTX(&mtx,0,2,108);MTX(&mtx,0,3,40);
+  MTX(&mtx,0,4,2);MTX(&mtx,0,6,4);
+/* {46, 22, 40, 96, 24, 0, 6}, */
+  MTX(&mtx,0,0,46);MTX(&mtx,0,1,22);MTX(&mtx,0,2,40);MTX(&mtx,0,3,96);
+  MTX(&mtx,0,4,24);MTX(&mtx,0,6,6);
+/* {29, 7, 2, 24, 155, 0, 37}, */
+  MTX(&mtx,0,0,29);MTX(&mtx,0,1,7);MTX(&mtx,0,2,2);MTX(&mtx,0,3,24);
+  MTX(&mtx,0,4,155);MTX(&mtx,0,6,37);
+/* {0, 0, 0, 0, 0, 64, 0}, */
+  MTX(&mtx,0,5,64);
+/* {26, 38, 4, 6, 37, 0, 70} */
+  MTX(&mtx,0,0,26);MTX(&mtx,0,1,38);MTX(&mtx,0,2,4);MTX(&mtx,0,3,6);
+  MTX(&mtx,0,4,37);MTX(&mtx,0,6,70);
+#undef MTX
+
+
+  return result;
+}
 
 BOOL do_tests()
 {
