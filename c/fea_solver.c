@@ -4713,7 +4713,6 @@ BOOL test_cholesky()
 BOOL do_tests()
 {
   BOOL result = TRUE;
-  printf("do_tests\n");
   result &= test_matrix();
   result &= test_solver();
   result &= test_ilu();
