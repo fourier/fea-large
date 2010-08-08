@@ -31,7 +31,6 @@ typedef int BOOL;
 #define MAX_ITER 10000
 #define TOLERANCE 1e-10
 
-
 /* Redefine type of the floating point values */
 #ifdef SINGLE
 typedef float real;
@@ -79,12 +78,10 @@ typedef void (*export_solution_t) (fea_solver_ptr, char *filename);
 typedef void (*apply_bc_t) (fea_solver_ptr self, int index, real arg);
 
 /*
- * A pointer to the function for calculating Cauchy stresses in
- * gauss nodes of the element
+ * A pointer to the function for calculating Cauchy stresses by given
+ * deformation gradient
  */
 typedef void (*element_gauss_stress_t)(fea_solver_ptr self,
-                                       int element,
-                                       int gauss,
                                        real graddef_tensor[MAX_DOF][MAX_DOF],
                                        real stress_tensor[MAX_DOF][MAX_DOF]);
 /*
@@ -107,7 +104,7 @@ typedef void (*solver_ctensor_t)(fea_solver_ptr self,
  */
 
 /* Element: TETRAHEDRA10, 4 nodes */
-real gauss_nodes4_tetr10[4][4] = { {(1/4.)/6.,        /* weight */
+real gauss_nodes4_tetr10[4][4] = { {(1/4.)/6.,   /* weight */
                                     0.58541020,  /* a */
                                     0.13819660,  /* b */
                                     0.13819660}, /* b */
@@ -200,7 +197,7 @@ typedef fea_solution_params* fea_solution_params_ptr;
 
 /* An array of nodes. */
 typedef struct nodes_array_tag {
-  int nodes_count;              /* number of input nodes */
+  int nodes_count;      /* number of input nodes */
   real **nodes;         /* nodes array,sized as nodes_count x MAX_DOF
                          * so access is  nodes[node_number][dof] */
 } nodes_array;
@@ -278,7 +275,7 @@ typedef elements_database* elements_database_ptr;
 typedef struct shape_gradients_tag {
   real **grads;                  /* array of derivatives of shape functions
                                   * [dof x nodes_per_element] */
-  real detJ;                    /* determinant of Jacobi matrix */
+  real detJ;                     /* determinant of Jacobi matrix */
 } shape_gradients;
 typedef shape_gradients* shape_gradients_ptr;
 
@@ -313,10 +310,12 @@ typedef load_step* load_step_ptr;
  * Sparse matrix row/column storage array
  */
 typedef struct indexed_array_tag {
-  int width;
-  int last_index;
-  int *indexes;
-  real *values;
+  int width;                    /* size of an array */
+  int last_index;               /* last stored index, i.e. if width = 20
+                                 * it will be 9 if only 10 nonzero elements
+                                 * stored */
+  int  *indexes;                /* array of column/row indexes */
+  real *values;                 /* array of values */
 } indexed_array;
 typedef indexed_array* indexed_array_ptr;
 
@@ -423,7 +422,7 @@ typedef struct fea_solver_tag {
                                  * load_steps_p[0..current_load_step] shall be
                                  * filled during load steps iterations
                                  */
-  sp_matrix global_mtx;         /* global stiffness matrix */
+  sp_matrix global_mtx;     /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_reactions_vct;   /* reactions in fixed dofs */
   real* global_solution_vct;    /* vector of global solution */
@@ -434,6 +433,8 @@ typedef struct fea_solver_tag {
 /*************************************************************/
 /* Functions declarations                                    */
 
+/* error exit from the application with message */
+void error(char* msg);
 
 /*
  * Load initial data from file
@@ -506,6 +507,12 @@ static void solver_free_shape_gradients(fea_solver_ptr self,
                                         shape_gradients_ptr grads);
 
 /*
+ * fills the self->shape_gradients or self->shape_gradients0 array
+ * depending on flag current
+ */
+static void solver_create_shape_gradients(fea_solver_ptr self,BOOL current);
+
+/*
  * Constructor for the load step structure
  * It doesn't allocate a memory for a step itself,
  * just initializes the internal structures
@@ -562,7 +569,8 @@ static void clear_sp_matrix(sp_matrix_ptr mtx);
  * This function assumes what mtx_to is already cleared by free_sp_matrix
  * or mtx_to is uninitialized pointer
  */
-static void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to);
+static void copy_sp_matrix(sp_matrix_ptr mtx_from,
+                           sp_matrix_ptr mtx_to);
 
 /*
  * Construct CSLR sparse matrix based on sp_matrix format
@@ -588,7 +596,7 @@ static void sp_matrix_element_add(sp_matrix_ptr self,
                                   int i, int j, real value);
 
 /* rearrange columns of a matrix to prepare for solving SLAE */
-static void sp_matrix_reorder(sp_matrix_ptr self);
+static void sp_matrix_finalize(sp_matrix_ptr self);
 
 /*
  * Implements BLAS level 2 function SAXPY: y = A*x+b
@@ -692,9 +700,94 @@ static void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
 #ifdef DUMP_DATA
 static void sp_matrix_dump(sp_matrix_ptr self);
 static void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self);
-#endif
+#endif 
+
+/*************************************************************/
+/* Functions describing concrete element types               */
+
+/* function for calculation value of shape function for 10-noded
+ * tetrahedra 
+ * by given element el, node number i,local coordinates r,s,t,  
+ * where r,s,t from [0;1] 
+ * all functions are taken from the book: 
+ * "The Finite Element Method for 3D Thermomechanical Applications"
+ * by - Guido Dhond p.72
+ */
+real tetrahedra10_isoform(int i,real r,real s,real t);
 
 
+/*
+ * Element TETRAHEDRA10, isoparametric shape function derivative
+ * with respece to the 1st variable r
+ * i - node number
+ */ 
+real tetrahedra10_df_dr(int i,real r,real s,real t);
+
+/*
+ * Element TETRAHEDRA10, isoparametric shape function derivative
+ * with respece to the 2nd variable s
+ * i - node number
+ */ 
+real tetrahedra10_df_ds(int i, real r, real s, real t);
+
+/*
+ * Element TETRAHEDRA10, isoparametric shape function derivative
+ * with respece to the 3rd variable t
+ * i - node number
+ */ 
+real tetrahedra10_df_dt(int i, real r, real s, real t);
+
+/*
+ * function for calculation derivatives of shape 
+ * function of 10noded tetrahedra element
+ * with respect to local coordinate system
+ * shape - number of node(and corresponding shape function)
+ * dof - degree of freedom, dof = 1 is r, dof = 2 is s, dof = 3 is t
+ * r,s,t is [0;1] - local coordinates
+ */
+real tetrahedra10_disoform(int shape,int dof,real r,real s,real t);
+
+
+/*************************************************************/
+/* Functions particular material models                      */
+
+/*
+ * Calculate stress tensor of the material model A5 by given
+ * deformation gradient
+ */
+void solver_element_gauss_stress_A5(fea_solver_ptr self,
+                                    real F[MAX_DOF][MAX_DOF],
+                                    real stress_tensor[MAX_DOF][MAX_DOF]);
+
+/*
+ * Calculate stress tensor of the Neo-hookean compressible model by given
+ * deformation gradient
+ */
+void solver_element_gauss_stress_compr_neohookean(fea_solver_ptr self,
+                                                  real F[MAX_DOF][MAX_DOF],
+                                                  real S[MAX_DOF][MAX_DOF]);
+/*
+ * Calculate 4th rank tensor C of the elastic material model A5
+ * T = C(4)**S
+ * S - deformation tensor
+ * by given deformation gradient
+ */
+void solver_ctensor_A5(fea_solver_ptr self,
+                       real (*graddef)[MAX_DOF],
+                       real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
+/*
+ * Calculate 4th rank tensor C of the Neo-hookean compressible material model
+ * T = C(4)**S
+ * S - deformation tensor 
+ * by given deformation gradient
+ */
+void solver_ctensor_compr_neohookean(fea_solver_ptr self,
+                                     real (*graddef)[MAX_DOF],
+                                     real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
+
+/*************************************************************/
+/* Functions for exporting data in different formats         */
+void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename);
 
 
 /*************************************************************/
@@ -734,12 +827,14 @@ real cdot(real* vector1, real* vector2, int size);
  * returns FALSE if fail
  */
 BOOL do_tests();
-/* test matrix/vector SLAE solverf */
-BOOL test_solver();
+/* test dense matrix operations */
+static BOOL test_matrix();
+/* test matrix/vector SLAE solver */
+static BOOL test_solver();
 /* test ILU decomposition */
-BOOL test_ilu();
+static BOOL test_ilu();
 /* test Cholesky decomposition */
-BOOL test_cholesky();
+static BOOL test_cholesky();
 
 /*
  * Solver function which shall be called
@@ -931,6 +1026,11 @@ void matrix_transpose_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
  */
 void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
 
+void error(char* msg)
+{
+  fprintf(stderr,"feasolve error encountered: %s",msg);
+  exit(1);
+}
 
 
 int main(int argc, char **argv)
@@ -1268,7 +1368,7 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
   }
 }
 
-void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
+static void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 {
   /*
    * Construct CSLR matrix from the sp_matrix
@@ -1486,7 +1586,7 @@ void indexed_array_sort(indexed_array_ptr self, int l, int r)
 }
 
 
-void sp_matrix_reorder(sp_matrix_ptr self)
+static void sp_matrix_finalize(sp_matrix_ptr self)
 {
   int i;
   
@@ -1515,7 +1615,7 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
   real* r = malloc(self->rows_count*sizeof(real));
   memset(r,0,self->rows_count*sizeof(real));
   /* reorder columns for to prepare to solve SLAE */
-  sp_matrix_reorder(self);
+  sp_matrix_finalize(self);
   /* sp_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x); */
   sp_matrix_solve_cg(self,b,b,&max_iter,&tolerance,x);
   /* Calculare residual r = A*x-b */
@@ -2400,7 +2500,7 @@ void matrix_tensor_mapping(int I, int* i, int* j)
 #endif
 
 
-void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
+static void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
 {
   /* prepare an array of shape functions gradients in
    * gauss nodes per element */
@@ -2790,8 +2890,6 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
 }
 
 void solver_element_gauss_stress_A5(fea_solver_ptr self,
-                                    int element,
-                                    int gauss,
                                     real F[MAX_DOF][MAX_DOF],
                                     real stress_tensor[MAX_DOF][MAX_DOF])
 {
@@ -2845,8 +2943,6 @@ void solver_element_gauss_stress_A5(fea_solver_ptr self,
 }
 
 void solver_element_gauss_stress_compr_neohookean(fea_solver_ptr self,
-                                                  int element,
-                                                  int gauss,
                                                   real F[MAX_DOF][MAX_DOF],
                                                   real S[MAX_DOF][MAX_DOF])
 {
@@ -2886,8 +2982,7 @@ void solver_element_gauss_stress(fea_solver_ptr self,
 {
   /* get deformation gradient */
   solver_element_gauss_graddef(self,element,gauss,graddef_tensor);
-  self->element_gauss_stress(self,element,gauss,
-                             graddef_tensor,stress_tensor);
+  self->element_gauss_stress(self,graddef_tensor,stress_tensor);
 }
 
 
@@ -2935,7 +3030,10 @@ void solver_ctensor_compr_neohookean(fea_solver_ptr self,
 void solver_create_forces_bc(fea_solver_ptr self)
 {
   /* TODO: implement this */
-  /* solver->global_forces_vct */
+  if (self)
+  {
+    /* solver->global_forces_vct */
+  }
 }
 
 void solver_apply_prescribed_bc(fea_solver_ptr self, real lambda)
@@ -3039,14 +3137,6 @@ void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda)
 }
 
 
-/* function for calculation value of shape function for 10-noded
- * tetrahedra 
- * by given element el, node number i,local coordinates r,s,t,  
- * where r,s,t from [0;1] 
- * all functions are taken from the book: 
- * "The Finite Element Method for 3D Thermomechanical Applications"
- * by - Guido Dhond p.72
- */
 real tetrahedra10_isoform(int i,real r,real s,real t)
 {
   switch(i)
@@ -3061,15 +3151,11 @@ real tetrahedra10_isoform(int i,real r,real s,real t)
   case 7: return 4*t*(1-r-s-t);
   case 8: return 4*r*t;
   case 9: return 4*s*t;
+  default: error("tetrahedra10_isoform: wrong index");
   }
   return 0;
 }
 
-/*
- * Element TETRAHEDRA10, isoparametric shape function derivative
- * with respece to the 1st variable r
- * i - node number
- */ 
 real tetrahedra10_df_dr(int i,real r,real s,real t)
 {
   switch(i)
@@ -3084,15 +3170,11 @@ real tetrahedra10_df_dr(int i,real r,real s,real t)
   case 7: return -4*t;
   case 8: return 4*t;
   case 9: return 0;
+  default: error("tetrahedra10_df_dr: wrong index");
   }
   return 0;
 }
 
-/*
- * Element TETRAHEDRA10, isoparametric shape function derivative
- * with respece to the 2nd variable s
- * i - node number
- */ 
 real tetrahedra10_df_ds(int i, real r, real s, real t)
 {
   switch(i)
@@ -3107,15 +3189,11 @@ real tetrahedra10_df_ds(int i, real r, real s, real t)
   case 7: return -4*t;
   case 8: return 0;
   case 9: return 4*t;
+  default: error("tetrahedra10_df_ds: wrong index");
   }
   return 0;
 }
 
-/*
- * Element TETRAHEDRA10, isoparametric shape function derivative
- * with respece to the 3rd variable t
- * i - node number
- */ 
 real tetrahedra10_df_dt(int i, real r, real s, real t)
 {
   switch(i)
@@ -3130,18 +3208,11 @@ real tetrahedra10_df_dt(int i, real r, real s, real t)
   case 7: return -8*t-4*s-4*r+4;
   case 8: return 4*r;
   case 9: return 4*s;
+  default: error("tetrahedra10_df_dt: wrong index");    
   }
   return 0;
 }
 
-/*
- * function for calculation derivatives of shape 
- * function of 10noded tetrahedra element
- * with respect to local coordinate system
- * shape - number of node(and corresponding shape function)
- * dof - degree of freedom, dof = 1 is r, dof = 2 is s, dof = 3 is t
- * r,s,t is [0;1] - local coordinates
- */
 real tetrahedra10_disoform(int shape,int dof,real r,real s,real t)
 {
   switch(dof)
@@ -3149,6 +3220,7 @@ real tetrahedra10_disoform(int shape,int dof,real r,real s,real t)
   case 0: return tetrahedra10_df_dr(shape,r,s,t);
   case 1: return tetrahedra10_df_ds(shape,r,s,t);
   case 2: return tetrahedra10_df_dt(shape,r,s,t);
+  default: error("tetrahedra10_disoform: wrong dof");
   }
   return 0;
 }
@@ -3301,12 +3373,13 @@ void solver_create_element_params_tetrahedra10(fea_solver* solver)
   case 5:
     solver->elements_db.gauss_nodes_data = gauss_nodes5_tetr10;
     break;
+  default: error("solver_create_element_params_tetrahedra10: gauss nodes");
   }
   solver->export = solver_export_tetrahedra10_gmsh;
 }
 
 
-fea_task_ptr new_fea_task()
+static fea_task_ptr new_fea_task()
 {
   /* allocate memory */
   fea_task_ptr task = (fea_task_ptr)malloc(sizeof(fea_task));
@@ -3332,7 +3405,7 @@ void free_fea_task(fea_task_ptr task)
 }
 
 /* Initializes fea solution params with default values */
-fea_solution_params_ptr new_fea_solution_params()
+static fea_solution_params_ptr new_fea_solution_params()
 {
   /* allocate memory */
   fea_solution_params_ptr fea_params = (fea_solution_params_ptr)
@@ -3350,7 +3423,7 @@ void free_fea_solution_params(fea_solution_params_ptr params)
 }
 
 /* Initialize nodes array but not initialize particular arrays  */
-nodes_array_ptr new_nodes_array()
+static nodes_array_ptr new_nodes_array()
 {
   /* allocate memory */
   nodes_array_ptr nodes = (nodes_array_ptr)malloc(sizeof(nodes_array));
@@ -3399,7 +3472,7 @@ void free_nodes_array(nodes_array_ptr nodes)
 
 
 /* Initialize elements array but not initialize particular elements */
-elements_array_ptr new_elements_array()
+static elements_array_ptr new_elements_array()
 {
   /* allocate memory */
   elements_array_ptr elements = (elements_array_ptr)
@@ -3426,7 +3499,7 @@ void free_elements_array(elements_array_ptr elements)
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
-presc_boundary_array_ptr new_presc_boundary_array()
+static presc_boundary_array_ptr new_presc_boundary_array()
 {
   /* allocate memory */
   presc_boundary_array_ptr presc_boundary =
@@ -3537,28 +3610,6 @@ void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
 }
 
 
-/* Case-insensitive string comparsion procedure */
-int istrcmp(s1,s2)
-  const char *s1, *s2;
-{
-  /* case insensitive comparison */
-  int d;
-  for (;;) {
-#ifdef ASCII_CTYPE
-    if (!isascii(*s1) || !isascii(*s2))
-      d = *s1 - *s2;
-    else
-#endif
-      d = (tolower((unsigned char) *s1) - tolower((unsigned char)*s2));
-    if ( d != 0 || *s1 == '\0' || *s2 == '\0' )
-      return d;
-    ++s1;
-    ++s2;
-  }
-  /*NOTREACHED*/
-}
-
-
 
 #ifdef USE_EXPAT
 
@@ -3583,28 +3634,6 @@ typedef enum xml_format_tags_enum {
   PRESC_NODE
 } xml_format_tags;
 
-/* Convert particular string to the XML tag enum */
-static xml_format_tags tagname_to_enum(const XML_Char* name)
-{
-  if (!istrcmp(name,"TASK")) return TASK;
-  if (!istrcmp(name,"MODEL")) return MODEL;
-  if (!istrcmp(name,"MODEL-PARAMETERS")) return MODEL_PARAMETERS;
-  if (!istrcmp(name,"SOLUTION")) return SOLUTION;
-  if (!istrcmp(name,"ELEMENT-TYPE")) return ELEMENT_TYPE;
-  if (!istrcmp(name,"LINE-SEARCH")) return LINE_SEARCH;
-  if (!istrcmp(name,"ARC-LENGTH")) return ARC_LENGTH;
-  if (!istrcmp(name,"INPUT-DATA")) return INPUT_DATA;
-  if (!istrcmp(name,"GEOMETRY")) return GEOMETRY;
-  if (!istrcmp(name,"NODES")) return NODES;
-  if (!istrcmp(name,"NODE")) return NODE;
-  if (!istrcmp(name,"ELEMENTS")) return ELEMENTS;
-  if (!istrcmp(name,"ELEMENT")) return ELEMENT;
-  if (!istrcmp(name,"BOUNDARY-CONDITIONS")) return BOUNDARY_CONDITIONS;
-  if(!istrcmp(name,"PRESCRIBED-DISPLACEMENTS"))return PRESCRIBED_DISPLACEMENTS;
-  if (!istrcmp(name,"PRESC-NODE")) return PRESC_NODE;
-  return UNKNOWN_TAG;
-}
-
 /* An input data structure used in parser */
 typedef struct parse_data_tag {
   fea_task *task;
@@ -3618,10 +3647,133 @@ typedef struct parse_data_tag {
 } parse_data;
 
 
+/*************************************************************/
+/* Declarations of functions used                            */
+
+/* Case-insensitive string comparsion procedure */
+int istrcmp(char *s1,char *s2);
+
 /*
  * Remove leading and trailing whitespaces from the string,
  * allocating null-terminated string as a result
  */
+char *trim_whitespaces(const char* string,size_t size);
+
+/* Expat start tag handler */
+void expat_start_tag_handler(void *userData,
+                             const XML_Char *name,
+                             const XML_Char **atts);
+
+                             /* Expat End tag handler */
+void expat_end_tag_handler(void *userData,
+                           const XML_Char *name);
+
+
+/*    
+ * Expat handler for the text between tags
+ * Since this function could be called several times for the current tag,
+ * it is necessary to store text somewhere. We use parse_data->current_text
+ * pointer and parse_data->current_size for these purposes
+ */
+void expat_text_handler(void *userData,
+                        const XML_Char *s,
+                        int len);
+
+/* test if an attribute name is what expected(attribute_name)
+ * and increase pointer to the next attribute if yes*/
+BOOL check_attribute(const char* attribute_name, const XML_Char ***atts);
+
+/* model tag handler */
+void process_model_type(parse_data* data, const XML_Char **atts);
+
+/* model-parameters tag handler */
+void process_model_params(parse_data* data, const XML_Char **atts);
+
+/* solution tag handler */
+void process_solution(parse_data* data, const XML_Char **atts);
+
+/* element-type tag handler */
+void process_element_type(parse_data* data, const XML_Char **atts);
+
+/* line-search tag handler */
+void process_line_search(parse_data* data, const XML_Char **atts);
+
+/* arc-length tag handler */
+void process_arc_length(parse_data* data, const XML_Char **atts);
+
+/* nodes tag handler */
+void process_nodes(parse_data* data, const XML_Char **atts);
+
+/* node tag handler */
+void process_node(parse_data* data, const XML_Char **atts);
+
+/* elements tag handler */
+void process_elements(parse_data* data, const XML_Char **atts);
+
+/* take the node id/position from the element attributes
+ * like 'node1' or 'node10'
+ * returns -1 in case of wrong attribute name
+ * but not skip it in this case!
+ */
+int node_position_from_attr(const XML_Char ***atts);
+
+/* element tag handler */
+void process_element(parse_data* data, const XML_Char **atts);
+
+/* prescribed-displacements tag handler */
+void process_prescribed_displacements(parse_data* data, const XML_Char **atts);
+
+/* node tag handler */
+void process_prescribed_node(parse_data* data, const XML_Char **atts);
+
+
+/*************************************************************/
+/* Definition of functions used                              */
+
+int istrcmp(char *s1,char *s2)
+{
+  /* case insensitive comparison */
+  int d;
+  for (;;) {
+#ifdef ASCII_CTYPE
+    if (!isascii(*s1) || !isascii(*s2))
+      d = *s1 - *s2;
+    else
+#endif
+      d = (tolower((unsigned char) *s1) - tolower((unsigned char)*s2));
+    if ( d != 0 || *s1 == '\0' || *s2 == '\0' )
+      return d;
+    ++s1;
+    ++s2;
+  }
+  /*NOTREACHED*/
+}
+
+
+/* Convert particular string to the XML tag enum */
+static xml_format_tags tagname_to_enum(const XML_Char* name)
+{
+  if (!istrcmp((char*)name,"TASK")) return TASK;
+  if (!istrcmp((char*)name,"MODEL")) return MODEL;
+  if (!istrcmp((char*)name,"MODEL-PARAMETERS")) return MODEL_PARAMETERS;
+  if (!istrcmp((char*)name,"SOLUTION")) return SOLUTION;
+  if (!istrcmp((char*)name,"ELEMENT-TYPE")) return ELEMENT_TYPE;
+  if (!istrcmp((char*)name,"LINE-SEARCH")) return LINE_SEARCH;
+  if (!istrcmp((char*)name,"ARC-LENGTH")) return ARC_LENGTH;
+  if (!istrcmp((char*)name,"INPUT-DATA")) return INPUT_DATA;
+  if (!istrcmp((char*)name,"GEOMETRY")) return GEOMETRY;
+  if (!istrcmp((char*)name,"NODES")) return NODES;
+  if (!istrcmp((char*)name,"NODE")) return NODE;
+  if (!istrcmp((char*)name,"ELEMENTS")) return ELEMENTS;
+  if (!istrcmp((char*)name,"ELEMENT")) return ELEMENT;
+  if (!istrcmp((char*)name,"BOUNDARY-CONDITIONS"))
+    return BOUNDARY_CONDITIONS;
+  if (!istrcmp((char*)name,"PRESCRIBED-DISPLACEMENTS"))
+    return PRESCRIBED_DISPLACEMENTS;
+  if (!istrcmp((char*)name,"PRESC-NODE")) return PRESC_NODE;
+  return UNKNOWN_TAG;
+}
+
 char *trim_whitespaces(const char* string,size_t size)
 {
   const char* end = string+size;
@@ -3651,7 +3803,6 @@ char *trim_whitespaces(const char* string,size_t size)
 void process_begin_tag(parse_data* data, int tag,const XML_Char **atts);
 void process_end_tag(parse_data* data, int tag);
 
-/* Expat start tag handler */
 void expat_start_tag_handler(void *userData,
                              const XML_Char *name,
                              const XML_Char **atts)
@@ -3662,7 +3813,6 @@ void expat_start_tag_handler(void *userData,
     process_begin_tag(data,tag,atts);
 }
 
-/* Expat End tag handler */
 void expat_end_tag_handler(void *userData,
                            const XML_Char *name)
 {
@@ -3678,12 +3828,6 @@ void expat_end_tag_handler(void *userData,
   data->current_size = 0;
 }
 
-/*
- * Expat handler for the text between tags
- * Since this function could be called several times for the current tag,
- * it is necessary to store text somewhere. We use parse_data->current_text
- * pointer and parse_data->current_size for these purposes
- */
 void expat_text_handler(void *userData,
                         const XML_Char *s,
                         int len)
@@ -3793,12 +3937,10 @@ static BOOL expat_data_load(char *filename,
 }
 
 
-/* test if an attribute name is what expected(attribute_name)
- * and increase pointer to the next attribute if yes*/
 BOOL check_attribute(const char* attribute_name, const XML_Char ***atts)
 {
   BOOL result = FALSE;
-  if(!istrcmp(**atts,attribute_name))
+  if(!istrcmp((char*)(**atts),(char*)attribute_name))
   {
     (*atts)++;
     result = TRUE;
@@ -3806,7 +3948,6 @@ BOOL check_attribute(const char* attribute_name, const XML_Char ***atts)
   return result;
 }
 
-/* model tag handler */
 void process_model_type(parse_data* data, const XML_Char **atts)
 {
   char* text = (char*)0;
@@ -4058,11 +4199,6 @@ void process_elements(parse_data* data, const XML_Char **atts)
   }
 }
 
-/* take the node id/position from the element attributes
- * like 'node1' or 'node10'
- * returns -1 in case of wrong attribute name
- * but not skip it in this case!
- */
 int node_position_from_attr(const XML_Char ***atts)
 {
   int result = -1;
@@ -4075,7 +4211,6 @@ int node_position_from_attr(const XML_Char ***atts)
   return result;
 }
 
-/* element tag handler */
 void process_element(parse_data* data, const XML_Char **atts)
 {
   char* text = (char*)0;
@@ -4287,7 +4422,6 @@ void process_end_tag(parse_data* data, int tag)
 #endif
 
 
-
 BOOL initial_data_load(char *filename,
                        fea_task_ptr *task,
                        fea_solution_params_ptr *fea_params,
@@ -4303,7 +4437,7 @@ BOOL initial_data_load(char *filename,
   return result;
 }
 
-BOOL test_matrix()
+static BOOL test_matrix()
 {
   BOOL result = TRUE;
   int i,j;
@@ -4341,7 +4475,7 @@ BOOL test_matrix()
   return result;
 }
 
-BOOL test_solver()
+static BOOL test_solver()
 {
   BOOL result = TRUE;
   sp_matrix mtx;
@@ -4368,7 +4502,7 @@ BOOL test_solver()
   sp_matrix_element_add(&mtx,2,0,-2);
 
 
-  sp_matrix_reorder(&mtx);
+  sp_matrix_finalize(&mtx);
   
   sp_matrix_solve(&mtx,v,x);
   result = !( fabs(x[0]-1) > TOLERANCE ||
@@ -4379,7 +4513,7 @@ BOOL test_solver()
   return result;
 }
 
-BOOL test_ilu()
+static BOOL test_ilu()
 {
   BOOL result = TRUE;
   sp_matrix mtx;
@@ -4446,7 +4580,7 @@ BOOL test_ilu()
   MTX(&mtx,6,0,2);MTX(&mtx,6,1,2);MTX(&mtx,6,4,3);MTX(&mtx,6,6,8);
 #undef MTX
 
-  sp_matrix_reorder(&mtx);
+  sp_matrix_finalize(&mtx);
   init_sp_matrix_skyline(&m,&mtx);
   init_copy_sp_matrix_skyline_ilu(&ILU,&m);
 
@@ -4491,7 +4625,7 @@ BOOL test_ilu()
   return result;
 }
 
-BOOL test_cholesky()
+static BOOL test_cholesky()
 {
   BOOL result = TRUE;
   /* initial matrix */
@@ -4540,16 +4674,22 @@ BOOL test_cholesky()
   MTX(&mtx,0,0,26);MTX(&mtx,0,1,38);MTX(&mtx,0,2,4);MTX(&mtx,0,3,6);
   MTX(&mtx,0,4,37);MTX(&mtx,0,6,70);
 #undef MTX
-
+  /* prepare initial matrix for conversion to Skyline format */
+  sp_matrix_finalize(&mtx);
+  /* initialize skyline format from given CRS format */
+  init_sp_matrix_skyline(&mtx,&m);
 
   return result;
 }
 
+
 BOOL do_tests()
 {
   BOOL result = TRUE;
+  printf("do_tests\n");
   result &= test_matrix();
   result &= test_solver();
   result &= test_ilu();
+  result &= test_cholesky();
   return result;
 }
