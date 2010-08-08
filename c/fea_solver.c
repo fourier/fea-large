@@ -157,6 +157,10 @@ typedef enum presc_boundary_type_enum {
   PRESCRIBEDXYZ = 7            /* x, y, z prescribed.*/
 } presc_boundary_type;
 
+typedef enum sparse_storage_type_enum {
+  CRS = 0,                      /* Compressed Row Storage */
+  CCS = 1                       /* Compressed Column Storage */
+} sparse_storage_type;
 
 typedef struct fea_material_model_tag {
   model_type model;                         /* model type */
@@ -321,13 +325,14 @@ typedef indexed_array* indexed_array_ptr;
 
 /*
  * Sparse matrix row storage 
- * Internal format based on CRS
+ * Internal format based on CRS or CCS
  */
 typedef struct sp_matrix_tag {
   int rows_count;
   int cols_count;
   indexed_array* rows;
-  BOOL ordered;
+  BOOL ordered;                              /* if matrix was finalized */
+  sparse_storage_type storage_type;          /* Storage type */
 } sp_matrix;
 typedef sp_matrix* sp_matrix_ptr;
 
@@ -454,24 +459,24 @@ BOOL initial_data_load(char *filename,
 /* Allocators for structures with a data from file           */
 
 /* Initializa fea task structure and fill with default values */
-static fea_task_ptr new_fea_task();
+fea_task_ptr new_fea_task();
 /* Initializes fea solution params with default values */
-static fea_solution_params_ptr new_fea_solution_params();
+fea_solution_params_ptr new_fea_solution_params();
 /* Initialize nodes array but not initialize particular arrays  */
-static nodes_array_ptr new_nodes_array();
+nodes_array_ptr new_nodes_array();
 /* create a copy of nodes array */
-static nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes);
+nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes);
 /* Initialize elements array but not initialize particular elements */
-static elements_array_ptr new_elements_array();
+elements_array_ptr new_elements_array();
 /* Initialize boundary nodes array but not initialize particular nodes */
-static presc_boundary_array_ptr new_presc_boundary_array();
+presc_boundary_array_ptr new_presc_boundary_array();
 
 /*
  * Constructor for the main application structure
  * all parameters shall be properly constructed and initialized
  * with data from file
  */
-static fea_solver_ptr new_fea_solver(fea_task_ptr task,
+fea_solver_ptr new_fea_solver(fea_task_ptr task,
                                      fea_solution_params_ptr fea_params,
                                      nodes_array_ptr nodes,
                                      elements_array_ptr elements,
@@ -481,43 +486,55 @@ static fea_solver_ptr new_fea_solver(fea_task_ptr task,
 /*************************************************************/
 /* Deallocators for internal data structures                 */
 
-static void free_fea_solution_params(fea_solution_params_ptr params);
-static void free_fea_task(fea_task_ptr task);
-static void free_nodes_array(nodes_array_ptr nodes);
-static void free_elements_array(elements_array_ptr elements);
-static void free_presc_boundary_array(presc_boundary_array_ptr presc);
+void free_fea_solution_params(fea_solution_params_ptr params);
+void free_fea_task(fea_task_ptr task);
+void free_nodes_array(nodes_array_ptr nodes);
+void free_elements_array(elements_array_ptr elements);
+void free_presc_boundary_array(presc_boundary_array_ptr presc);
 
 /*
  * Destructor for the main solver
  * Will also clear all aggregated structures
  */
-static void free_fea_solver(fea_solver_ptr solver);
+void free_fea_solver(fea_solver_ptr solver);
 
 /*
  * Constructor for the shape functions gradients array
  * element - index of the element to calculate in
  * gauss - index of gauss node
  */
-static shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
+shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
                                                       nodes_array_ptr nodes,
                                                       int element,
                                                       int gauss);
 /* Destructor for the shape gradients array */
-static void solver_free_shape_gradients(fea_solver_ptr self,
+void solver_free_shape_gradients(fea_solver_ptr self,
                                         shape_gradients_ptr grads);
 
 /*
  * fills the self->shape_gradients or self->shape_gradients0 array
  * depending on flag current
  */
-static void solver_create_shape_gradients(fea_solver_ptr self,BOOL current);
+void solver_create_shape_gradients(fea_solver_ptr self,BOOL current);
+
+/*
+ * Returns a particular component of a node with local index 'node'
+ * in element with index 'element' for the d.o.f. 'dof'
+ */
+real solver_node_dof(fea_solver_ptr self,
+                     nodes_array_ptr nodes,
+                     int element,
+                     int node,
+                     int dof);
+
+
 
 /*
  * Constructor for the load step structure
  * It doesn't allocate a memory for a step itself,
  * just initializes the internal structures
  */
-static void init_load_step(fea_solver_ptr self,
+void init_load_step(fea_solver_ptr self,
                            load_step_ptr step,
                            int step_number);
             
@@ -526,7 +543,7 @@ static void init_load_step(fea_solver_ptr self,
  * it doesn't deallocate a memory for a step itself,
  * just frees all step internal structures
  */
-static void free_load_step(fea_solver_ptr self, load_step_ptr step);
+void free_load_step(fea_solver_ptr self, load_step_ptr step);
 
 
 /*************************************************************/
@@ -547,7 +564,7 @@ void indexed_array_sort(indexed_array_ptr self, int l, int r);
  * only for its structures. Matrix mtx shall be already allocated
  * bandwdith - is a start bandwidth of a matrix row
  */
-static void init_sp_matrix(sp_matrix_ptr mtx,
+void init_sp_matrix(sp_matrix_ptr mtx,
                            int rows,
                            int cols,
                            int bandwidth);
@@ -556,20 +573,20 @@ static void init_sp_matrix(sp_matrix_ptr mtx,
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sp_matrix(sp_matrix_ptr mtx);
+void free_sp_matrix(sp_matrix_ptr mtx);
 
 /*
  * Clear the sparse matrix.
  * Set the element values to zero keeping sparsity portrait
  */
-static void clear_sp_matrix(sp_matrix_ptr mtx);
+void clear_sp_matrix(sp_matrix_ptr mtx);
 
 /*
  * Copy sparse matrix from mtx_from to mtx_to
  * This function assumes what mtx_to is already cleared by free_sp_matrix
  * or mtx_to is uninitialized pointer
  */
-static void copy_sp_matrix(sp_matrix_ptr mtx_from,
+void copy_sp_matrix(sp_matrix_ptr mtx_from,
                            sp_matrix_ptr mtx_to);
 
 /*
@@ -577,42 +594,42 @@ static void copy_sp_matrix(sp_matrix_ptr mtx_from,
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
  */
-static void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,
-                                   sp_matrix_ptr mtx);
+void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,
+                            sp_matrix_ptr mtx);
 /*
  * Destructor for a sparse matrix in CSLR format
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-static void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
+void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
 
 /* getters/setters for a sparse matrix */
 
 /* returns a pointer to the specific element
  * zero pointer if not found */
-static real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
+real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
-static void sp_matrix_element_add(sp_matrix_ptr self,
+void sp_matrix_element_add(sp_matrix_ptr self,
                                   int i, int j, real value);
 
 /* rearrange columns of a matrix to prepare for solving SLAE */
-static void sp_matrix_finalize(sp_matrix_ptr self);
+void sp_matrix_finalize(sp_matrix_ptr self);
 
 /*
  * Implements BLAS level 2 function SAXPY: y = A*x+b
  * All vectors shall be already allocated
- static void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
+ void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
 */
 
 /* Matrix-vector multiplication
  * y = A*x*/
-static void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y);
+void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y);
 
 /*
  * Solve SLAE for a matrix self with right-part b
  * Store results to the vector x. It shall be already allocated
  */
-static void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x);
+void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x);
 /*
  * Conjugate Grade solver
  * self - matrix
@@ -624,7 +641,7 @@ static void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x);
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-static void sp_matrix_solve_cg(sp_matrix_ptr self,
+void sp_matrix_solve_cg(sp_matrix_ptr self,
                                real* b,
                                real* x0,
                                int* max_iter,
@@ -643,7 +660,7 @@ static void sp_matrix_solve_cg(sp_matrix_ptr self,
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-static void sp_matrix_solve_pcg(sp_matrix_ptr self,
+void sp_matrix_solve_pcg(sp_matrix_ptr self,
                                 real* b,
                                 real* x0,
                                 int* max_iter,
@@ -657,24 +674,24 @@ static void sp_matrix_solve_pcg(sp_matrix_ptr self,
  * lu_lowertr - lower triangle of the ILU decomposition
  * lu_uppertr - upper triangle of the ILU decomposition
  */
-static void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
+void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
                                             sp_matrix_skyline_ptr parent);
 
 /* Free the sparse matrix skyline & ilu decomposition structure */
-static void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
+void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
 
 /*
  * by given L,U - ILU decomposition of the matrix A
  * calculates L*x = y
  */
-static void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu_ptr self,
+void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu_ptr self,
                                            real* x,
                                            real* y);
 /*
  * by given L,U - ILU decomposition of the matrix A
  * calculates U*x = y
  */
-static void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
+void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
                                            real* x,
                                            real* y);
 
@@ -683,7 +700,7 @@ static void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
  * Solves SLAE L*x = b
  * Warning! Side-Effect: modifies b
  */
-static void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
+void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
                                               real* b,
                                               real* x);
 
@@ -692,14 +709,14 @@ static void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
  * Solves SLAE U*x = b
  * Warning! Side-Effect: modifies b 
  */
-static void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
+void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
                                               real* b,
                                               real* x);
 
 
 #ifdef DUMP_DATA
-static void sp_matrix_dump(sp_matrix_ptr self);
-static void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self);
+void sp_matrix_dump(sp_matrix_ptr self, char* filename);
+void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self, char* filename);
 #endif 
 
 /*************************************************************/
@@ -828,13 +845,13 @@ real cdot(real* vector1, real* vector2, int size);
  */
 BOOL do_tests();
 /* test dense matrix operations */
-static BOOL test_matrix();
+BOOL test_matrix();
 /* test matrix/vector SLAE solver */
-static BOOL test_solver();
+BOOL test_solver();
 /* test ILU decomposition */
-static BOOL test_ilu();
+BOOL test_ilu();
 /* test Cholesky decomposition */
-static BOOL test_cholesky();
+BOOL test_cholesky();
 
 /*
  * Solver function which shall be called
@@ -864,63 +881,50 @@ void dump_input_data( char* filename,
  * of gauss nodes for particular element type.
  * This function is used on a construction phase
  */
-static void solver_create_element_params(fea_solver_ptr self);
+void solver_create_element_params(fea_solver_ptr self);
 
 /*
  * Initialize material model functions
  */
-static void solver_create_model_params(fea_solver_ptr self);
+void solver_create_model_params(fea_solver_ptr self);
 
 /* Allocates memory and construct elements database for solver */
-static void solver_create_element_database(fea_solver_ptr self);
+void solver_create_element_database(fea_solver_ptr self);
 /* Destructor for the element database */
-static void solver_free_element_database(fea_solver_ptr self);
-
-/*
- * Returns a particular component of a node with local index 'node'
- * in element with index 'element' for the d.o.f. 'dof'
- */
-static real solver_node_dof(fea_solver_ptr self,
-                            nodes_array_ptr nodes,
-                            int element,
-                            int node,
-                            int dof)
-{
-  return nodes->nodes[self->elements_p->elements[element][node]][dof];
-}
+void solver_free_element_database(fea_solver_ptr self);
 
 
 /*
  * Create an array of shape functions gradients
  * in gauss nodes per elements in initial configuration
  */
-static void solver_create_initial_shape_gradients(fea_solver_ptr self);
+void solver_create_initial_shape_gradients(fea_solver_ptr self);
 
 /*
  * Create an array of shape functions gradients
  * in gauss nodes per elements in current configuration
  */
-static void solver_create_current_shape_gradients(fea_solver_ptr self);
+void solver_create_current_shape_gradients(fea_solver_ptr self);
 
 /* Create components of the Cauchy stresses in gauss nodes  */
-static void solver_create_stresses(fea_solver_ptr self);
+void solver_create_stresses(fea_solver_ptr self);
 
 /* Create global residual forces vector */
-static void solver_create_residual_forces(fea_solver_ptr self);
+void solver_create_residual_forces(fea_solver_ptr self);
 
 /* Create global stiffness matrix */
-static void solver_create_stiffness(fea_solver_ptr self);
+void solver_create_stiffness(fea_solver_ptr self);
 
 
 /* Update global forces vector with residual forces for the element */
-static void solver_local_residual_forces(fea_solver_ptr self,int element);
+void solver_local_residual_forces(fea_solver_ptr self,int element);
 
 
 /* Create constitutive component of the stiffness matrix */
-static void solver_local_constitutive_part(fea_solver_ptr self,int element);
+void solver_local_constitutive_part(fea_solver_ptr self,int element);
 
 /* Create initial stress component of the stiffness matrix */
-static void solver_local_initial_stess_part(fea_solver_ptr self,int element);
+void solver_local_initial_stess_part(fea_solver_ptr self,int element);
 
 
 /*
@@ -930,7 +934,7 @@ static void solver_local_initial_stess_part(fea_solver_ptr self,int element);
  * graddef - MAX_DOF x MAX_DOF array of components of Deformation
  * gradient tensor
  */
-static void solver_element_gauss_graddef(fea_solver_ptr self,
+void solver_element_gauss_graddef(fea_solver_ptr self,
                                          int element,
                                          int gauss,
                                          real graddef[MAX_DOF][MAX_DOF]);
@@ -943,7 +947,7 @@ static void solver_element_gauss_graddef(fea_solver_ptr self,
  * graddef - MAX_DOF x MAX_DOF array of components of Deformation gradient
  * stress - MAX_DOF x MAX_DOF array of components of Cauchy stress tensor
  */
-static void solver_element_gauss_stress(fea_solver_ptr self,
+void solver_element_gauss_stress(fea_solver_ptr self,
                                         int element,
                                         int gauss,
                                         real graddef_tensor[MAX_DOF][MAX_DOF],
@@ -952,19 +956,19 @@ static void solver_element_gauss_stress(fea_solver_ptr self,
 
 
 /* Fill greate global forces vector */
-static void solver_create_forces_bc(fea_solver_ptr self);
+void solver_create_forces_bc(fea_solver_ptr self);
 
 /*
  * Apply BC in form of prescribed displacements
  * lambda - multiplier for the prescribed displacements
  */
-static void solver_apply_prescribed_bc(fea_solver_ptr self,real lambda);
+void solver_apply_prescribed_bc(fea_solver_ptr self,real lambda);
 
 /*
  * Call the 'apply' function for every prescribed displacement
  * with an argument lambda
  */
-static void solver_apply_bc_general(fea_solver_ptr self,
+void solver_apply_bc_general(fea_solver_ptr self,
                                     apply_bc_t apply,
                                     real lambda);
 
@@ -972,13 +976,13 @@ static void solver_apply_bc_general(fea_solver_ptr self,
  * global d.o.f.
  * This function is called from solver_apply_prescribed_bc
  */
-static void solver_apply_single_bc(fea_solver_ptr self,
+void solver_apply_single_bc(fea_solver_ptr self,
                                    int index, real value);
 
 /* Add BC in form of prescribed displacements to a single specified
  * global d.o.f. of a global nodes vector
  * This function is called from solver_update_nodes_with_bc */
-static void solver_update_node_with_bc(fea_solver_ptr self,
+void solver_update_node_with_bc(fea_solver_ptr self,
                                        int index,
                                        real value);
 
@@ -988,15 +992,25 @@ static void solver_update_node_with_bc(fea_solver_ptr self,
  * 1) calculation of the deformation gradients
  * 2) create deformed configuration by applying prescribed displacements
  */
-static void solver_update_nodes_with_solution(fea_solver_ptr self,
+void solver_update_nodes_with_solution(fea_solver_ptr self,
                                               real* x);
 
 /*
  * Update solver->nodes array with prescribed displacements
  * lambda - multiplier for prescribed displacements
  */
-static void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda);
+void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda);
 
+/*
+ * Creates a particular gauss node for the element
+ * with index element_index and gauss node number gauss_node_index
+ */
+gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
+                                     int gauss_node_index);
+
+/* Deallocate gauss node */
+void solver_free_gauss_node(fea_solver_ptr self,
+                            gauss_node_ptr node);
 
 /*************************************************************/
 /* Functions for operating on matrix 3x3                     */
@@ -1297,6 +1311,7 @@ void init_sp_matrix(sp_matrix_ptr mtx,
     mtx->rows_count = rows;
     mtx->cols_count = cols;
     mtx->ordered = FALSE;
+    mtx->storage_type = CRS;
     mtx->rows = (indexed_array*)malloc(sizeof(indexed_array)*rows);
     /* create rows with fixed bandwidth */
     for (i = 0; i < rows; ++ i)
@@ -1368,7 +1383,7 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
   }
 }
 
-static void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
+void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 {
   /*
    * Construct CSLR matrix from the sp_matrix
@@ -1586,7 +1601,7 @@ void indexed_array_sort(indexed_array_ptr self, int l, int r)
 }
 
 
-static void sp_matrix_finalize(sp_matrix_ptr self)
+void sp_matrix_finalize(sp_matrix_ptr self)
 {
   int i;
   
@@ -2041,13 +2056,13 @@ void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
 
 
 #ifdef DUMP_DATA
-void sp_matrix_dump(sp_matrix_ptr self)
+void sp_matrix_dump(sp_matrix_ptr self,char* filename)
 {
   FILE* f;
   int i,j;
   real *pvalue,value;
 
-  if ((f = fopen("global_matrix_c.txt","w+")))
+  if ((f = fopen(filename,"w+")))
   {
     for (i = 0; i < self->rows_count; ++ i)
     {
@@ -2064,7 +2079,7 @@ void sp_matrix_dump(sp_matrix_ptr self)
 }
 
 
-void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self)
+void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self,char* filename)
 {
   int i;
   FILE* f;
@@ -2099,6 +2114,14 @@ void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self)
 }
 #endif
 
+real solver_node_dof(fea_solver_ptr self,
+                            nodes_array_ptr nodes,
+                            int element,
+                            int node,
+                            int dof)
+{
+  return nodes->nodes[self->elements_p->elements[element][node]][dof];
+}
 
 
 fea_solver* new_fea_solver(fea_task_ptr task,
@@ -2213,11 +2236,7 @@ void free_fea_solver(fea_solver_ptr solver)
   free(solver);
 }
 
-/*
- * Creates a particular gauss node for the element
- * with index element_index and gauss node number gauss_node_index
- */
-static gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
+gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
                                             int gauss_node_index)
 {
   gauss_node_ptr node = (gauss_node_ptr)0;
@@ -2252,7 +2271,7 @@ static gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
 }
 
 /* Deallocate gauss node */
-static void solver_free_gauss_node(fea_solver_ptr self,
+void solver_free_gauss_node(fea_solver_ptr self,
                                    gauss_node_ptr node)
 {
   int i;
@@ -2298,7 +2317,7 @@ void solver_free_element_database(fea_solver_ptr solver)
   }
 }
 
-static void solver_create_element_params_tetrahedra10(fea_solver_ptr solver);
+void solver_create_element_params_tetrahedra10(fea_solver_ptr solver);
 
 /*
  * Creates particular element-dependent data in fea_solver
@@ -2500,7 +2519,7 @@ void matrix_tensor_mapping(int I, int* i, int* j)
 #endif
 
 
-static void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
+void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
 {
   /* prepare an array of shape functions gradients in
    * gauss nodes per element */
@@ -3379,7 +3398,7 @@ void solver_create_element_params_tetrahedra10(fea_solver* solver)
 }
 
 
-static fea_task_ptr new_fea_task()
+fea_task_ptr new_fea_task()
 {
   /* allocate memory */
   fea_task_ptr task = (fea_task_ptr)malloc(sizeof(fea_task));
@@ -3405,7 +3424,7 @@ void free_fea_task(fea_task_ptr task)
 }
 
 /* Initializes fea solution params with default values */
-static fea_solution_params_ptr new_fea_solution_params()
+fea_solution_params_ptr new_fea_solution_params()
 {
   /* allocate memory */
   fea_solution_params_ptr fea_params = (fea_solution_params_ptr)
@@ -3423,7 +3442,7 @@ void free_fea_solution_params(fea_solution_params_ptr params)
 }
 
 /* Initialize nodes array but not initialize particular arrays  */
-static nodes_array_ptr new_nodes_array()
+nodes_array_ptr new_nodes_array()
 {
   /* allocate memory */
   nodes_array_ptr nodes = (nodes_array_ptr)malloc(sizeof(nodes_array));
@@ -3472,7 +3491,7 @@ void free_nodes_array(nodes_array_ptr nodes)
 
 
 /* Initialize elements array but not initialize particular elements */
-static elements_array_ptr new_elements_array()
+elements_array_ptr new_elements_array()
 {
   /* allocate memory */
   elements_array_ptr elements = (elements_array_ptr)
@@ -3499,7 +3518,7 @@ void free_elements_array(elements_array_ptr elements)
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
-static presc_boundary_array_ptr new_presc_boundary_array()
+presc_boundary_array_ptr new_presc_boundary_array()
 {
   /* allocate memory */
   presc_boundary_array_ptr presc_boundary =
@@ -3653,6 +3672,9 @@ typedef struct parse_data_tag {
 /* Case-insensitive string comparsion procedure */
 int istrcmp(char *s1,char *s2);
 
+/* Convert particular string to the XML tag enum */
+xml_format_tags tagname_to_enum(const XML_Char* name);
+
 /*
  * Remove leading and trailing whitespaces from the string,
  * allocating null-terminated string as a result
@@ -3726,6 +3748,13 @@ void process_prescribed_displacements(parse_data* data, const XML_Char **atts);
 /* node tag handler */
 void process_prescribed_node(parse_data* data, const XML_Char **atts);
 
+/* main function for loading data using expat XML processor */
+BOOL expat_data_load(char *filename,
+                     fea_task **task,
+                     fea_solution_params **fea_params,
+                     nodes_array **nodes,
+                     elements_array **elements,
+                     presc_boundary_array **presc_boundary);
 
 /*************************************************************/
 /* Definition of functions used                              */
@@ -3749,9 +3778,7 @@ int istrcmp(char *s1,char *s2)
   /*NOTREACHED*/
 }
 
-
-/* Convert particular string to the XML tag enum */
-static xml_format_tags tagname_to_enum(const XML_Char* name)
+xml_format_tags tagname_to_enum(const XML_Char* name)
 {
   if (!istrcmp((char*)name,"TASK")) return TASK;
   if (!istrcmp((char*)name,"MODEL")) return MODEL;
@@ -3856,12 +3883,12 @@ void expat_text_handler(void *userData,
 }
 
 
-static BOOL expat_data_load(char *filename,
-                            fea_task **task,
-                            fea_solution_params **fea_params,
-                            nodes_array **nodes,
-                            elements_array **elements,
-                            presc_boundary_array **presc_boundary)
+BOOL expat_data_load(char *filename,
+                     fea_task **task,
+                     fea_solution_params **fea_params,
+                     nodes_array **nodes,
+                     elements_array **elements,
+                     presc_boundary_array **presc_boundary)
 {
   BOOL result = FALSE;
   FILE* xml_document_file;
@@ -4437,7 +4464,7 @@ BOOL initial_data_load(char *filename,
   return result;
 }
 
-static BOOL test_matrix()
+BOOL test_matrix()
 {
   BOOL result = TRUE;
   int i,j;
@@ -4475,7 +4502,7 @@ static BOOL test_matrix()
   return result;
 }
 
-static BOOL test_solver()
+BOOL test_solver()
 {
   BOOL result = TRUE;
   sp_matrix mtx;
@@ -4513,7 +4540,7 @@ static BOOL test_solver()
   return result;
 }
 
-static BOOL test_ilu()
+BOOL test_ilu()
 {
   BOOL result = TRUE;
   sp_matrix mtx;
@@ -4625,7 +4652,7 @@ static BOOL test_ilu()
   return result;
 }
 
-static BOOL test_cholesky()
+BOOL test_cholesky()
 {
   BOOL result = TRUE;
   /* initial matrix */
@@ -4657,27 +4684,27 @@ static BOOL test_cholesky()
   MTX(&mtx,0,0,90);MTX(&mtx,0,1,6);MTX(&mtx,0,2,4);MTX(&mtx,0,3,46);
   MTX(&mtx,0,4,29);MTX(&mtx,0,6,26);
 /* {6, 127, 34, 22, 7, 0, 38}, */
-  MTX(&mtx,0,0,6);MTX(&mtx,0,1,127);MTX(&mtx,0,2,34);MTX(&mtx,0,3,22);
-  MTX(&mtx,0,4,7);MTX(&mtx,0,6,38);
+  MTX(&mtx,1,0,6);MTX(&mtx,1,1,127);MTX(&mtx,1,2,34);MTX(&mtx,1,3,22);
+  MTX(&mtx,1,4,7);MTX(&mtx,1,6,38);
 /* {4, 34, 108, 40, 2, 0, 4}, */
-  MTX(&mtx,0,0,4);MTX(&mtx,0,1,34);MTX(&mtx,0,2,108);MTX(&mtx,0,3,40);
-  MTX(&mtx,0,4,2);MTX(&mtx,0,6,4);
+  MTX(&mtx,2,0,4);MTX(&mtx,2,1,34);MTX(&mtx,2,2,108);MTX(&mtx,2,3,40);
+  MTX(&mtx,2,4,2);MTX(&mtx,2,6,4);
 /* {46, 22, 40, 96, 24, 0, 6}, */
-  MTX(&mtx,0,0,46);MTX(&mtx,0,1,22);MTX(&mtx,0,2,40);MTX(&mtx,0,3,96);
-  MTX(&mtx,0,4,24);MTX(&mtx,0,6,6);
+  MTX(&mtx,3,0,46);MTX(&mtx,3,1,22);MTX(&mtx,3,2,40);MTX(&mtx,3,3,96);
+  MTX(&mtx,3,4,24);MTX(&mtx,3,6,6);
 /* {29, 7, 2, 24, 155, 0, 37}, */
-  MTX(&mtx,0,0,29);MTX(&mtx,0,1,7);MTX(&mtx,0,2,2);MTX(&mtx,0,3,24);
-  MTX(&mtx,0,4,155);MTX(&mtx,0,6,37);
+  MTX(&mtx,4,0,29);MTX(&mtx,4,1,7);MTX(&mtx,4,2,2);MTX(&mtx,4,3,24);
+  MTX(&mtx,4,4,155);MTX(&mtx,4,6,37);
 /* {0, 0, 0, 0, 0, 64, 0}, */
-  MTX(&mtx,0,5,64);
+  MTX(&mtx,5,5,64);
 /* {26, 38, 4, 6, 37, 0, 70} */
-  MTX(&mtx,0,0,26);MTX(&mtx,0,1,38);MTX(&mtx,0,2,4);MTX(&mtx,0,3,6);
-  MTX(&mtx,0,4,37);MTX(&mtx,0,6,70);
+  MTX(&mtx,6,0,26);MTX(&mtx,6,1,38);MTX(&mtx,6,2,4);MTX(&mtx,6,3,6);
+  MTX(&mtx,6,4,37);MTX(&mtx,6,6,70);
 #undef MTX
   /* prepare initial matrix for conversion to Skyline format */
   sp_matrix_finalize(&mtx);
   /* initialize skyline format from given CRS format */
-  init_sp_matrix_skyline(&mtx,&m);
+  init_sp_matrix_skyline(&m,&mtx);
 
   return result;
 }
