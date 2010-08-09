@@ -330,7 +330,7 @@ typedef indexed_array* indexed_array_ptr;
 typedef struct sp_matrix_tag {
   int rows_count;
   int cols_count;
-  indexed_array* rows;
+  indexed_array* storage;
   BOOL ordered;                              /* if matrix was finalized */
   sparse_storage_type storage_type;          /* Storage type */
 } sp_matrix;
@@ -477,10 +477,10 @@ presc_boundary_array_ptr new_presc_boundary_array();
  * with data from file
  */
 fea_solver_ptr new_fea_solver(fea_task_ptr task,
-                                     fea_solution_params_ptr fea_params,
-                                     nodes_array_ptr nodes,
-                                     elements_array_ptr elements,
-                                     presc_boundary_array_ptr presc);
+                              fea_solution_params_ptr fea_params,
+                              nodes_array_ptr nodes,
+                              elements_array_ptr elements,
+                              presc_boundary_array_ptr presc);
 
 
 /*************************************************************/
@@ -504,12 +504,12 @@ void free_fea_solver(fea_solver_ptr solver);
  * gauss - index of gauss node
  */
 shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
-                                                      nodes_array_ptr nodes,
-                                                      int element,
-                                                      int gauss);
+                                               nodes_array_ptr nodes,
+                                               int element,
+                                               int gauss);
 /* Destructor for the shape gradients array */
 void solver_free_shape_gradients(fea_solver_ptr self,
-                                        shape_gradients_ptr grads);
+                                 shape_gradients_ptr grads);
 
 /*
  * fills the self->shape_gradients or self->shape_gradients0 array
@@ -535,8 +535,8 @@ real solver_node_dof(fea_solver_ptr self,
  * just initializes the internal structures
  */
 void init_load_step(fea_solver_ptr self,
-                           load_step_ptr step,
-                           int step_number);
+                    load_step_ptr step,
+                    int step_number);
             
 /*
  * Desctructor for the load step structure.
@@ -563,11 +563,13 @@ void indexed_array_sort(indexed_array_ptr self, int l, int r);
  * This function doesn't allocate the memory for the matrix itself;
  * only for its structures. Matrix mtx shall be already allocated
  * bandwdith - is a start bandwidth of a matrix row
+ * type - CRS or CSS sparse matrix storage types
  */
 void init_sp_matrix(sp_matrix_ptr mtx,
-                           int rows,
-                           int cols,
-                           int bandwidth);
+                    int rows,
+                    int cols,
+                    int bandwidth,
+                    sparse_storage_type type);
 /*
  * Destructor for a sparse matrix
  * This function doesn't deallocate memory for the matrix itself,
@@ -587,7 +589,7 @@ void clear_sp_matrix(sp_matrix_ptr mtx);
  * or mtx_to is uninitialized pointer
  */
 void copy_sp_matrix(sp_matrix_ptr mtx_from,
-                           sp_matrix_ptr mtx_to);
+                    sp_matrix_ptr mtx_to);
 
 /*
  * Construct CSLR sparse matrix based on sp_matrix format
@@ -610,7 +612,7 @@ void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
 real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
 /* adds an element value to the matrix node (i,j) */
 void sp_matrix_element_add(sp_matrix_ptr self,
-                                  int i, int j, real value);
+                           int i, int j, real value);
 
 /* rearrange columns of a matrix to prepare for solving SLAE */
 void sp_matrix_finalize(sp_matrix_ptr self);
@@ -642,11 +644,11 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x);
  * x - output vector
  */
 void sp_matrix_solve_cg(sp_matrix_ptr self,
-                               real* b,
-                               real* x0,
-                               int* max_iter,
-                               real* tolerance,
-                               real* x);
+                        real* b,
+                        real* x0,
+                        int* max_iter,
+                        real* tolerance,
+                        real* x);
 
 /*
  * Preconditioned Conjugate Grade solver
@@ -661,11 +663,11 @@ void sp_matrix_solve_cg(sp_matrix_ptr self,
  * x - output vector
  */
 void sp_matrix_solve_pcg(sp_matrix_ptr self,
-                                real* b,
-                                real* x0,
-                                int* max_iter,
-                                real* tolerance,
-                                real* x);
+                         real* b,
+                         real* x0,
+                         int* max_iter,
+                         real* tolerance,
+                         real* x);
 
 
 /*
@@ -675,7 +677,7 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
  * lu_uppertr - upper triangle of the ILU decomposition
  */
 void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
-                                            sp_matrix_skyline_ptr parent);
+                                     sp_matrix_skyline_ptr parent);
 
 /* Free the sparse matrix skyline & ilu decomposition structure */
 void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
@@ -685,15 +687,15 @@ void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
  * calculates L*x = y
  */
 void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu_ptr self,
-                                           real* x,
-                                           real* y);
+                                    real* x,
+                                    real* y);
 /*
  * by given L,U - ILU decomposition of the matrix A
  * calculates U*x = y
  */
 void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
-                                           real* x,
-                                           real* y);
+                                    real* x,
+                                    real* y);
 
 /*
  * by given L,U - ILU decomposition of the matrix A
@@ -701,8 +703,8 @@ void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
  * Warning! Side-Effect: modifies b
  */
 void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
-                                              real* b,
-                                              real* x);
+                                       real* b,
+                                       real* x);
 
 /*
  * by given L,U - ILU decomposition of the matrix A
@@ -710,8 +712,8 @@ void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
  * Warning! Side-Effect: modifies b 
  */
 void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
-                                              real* b,
-                                              real* x);
+                                       real* b,
+                                       real* x);
 
 
 #ifdef DUMP_DATA
@@ -935,9 +937,9 @@ void solver_local_initial_stess_part(fea_solver_ptr self,int element);
  * gradient tensor
  */
 void solver_element_gauss_graddef(fea_solver_ptr self,
-                                         int element,
-                                         int gauss,
-                                         real graddef[MAX_DOF][MAX_DOF]);
+                                  int element,
+                                  int gauss,
+                                  real graddef[MAX_DOF][MAX_DOF]);
 
 
 /*
@@ -948,10 +950,10 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
  * stress - MAX_DOF x MAX_DOF array of components of Cauchy stress tensor
  */
 void solver_element_gauss_stress(fea_solver_ptr self,
-                                        int element,
-                                        int gauss,
-                                        real graddef_tensor[MAX_DOF][MAX_DOF],
-                                        real stress_tensor[MAX_DOF][MAX_DOF]);
+                                 int element,
+                                 int gauss,
+                                 real graddef_tensor[MAX_DOF][MAX_DOF],
+                                 real stress_tensor[MAX_DOF][MAX_DOF]);
 
 
 
@@ -969,22 +971,22 @@ void solver_apply_prescribed_bc(fea_solver_ptr self,real lambda);
  * with an argument lambda
  */
 void solver_apply_bc_general(fea_solver_ptr self,
-                                    apply_bc_t apply,
-                                    real lambda);
+                             apply_bc_t apply,
+                             real lambda);
 
 /* Apply BC in form of prescribed displacements to a single specified
  * global d.o.f.
  * This function is called from solver_apply_prescribed_bc
  */
 void solver_apply_single_bc(fea_solver_ptr self,
-                                   int index, real value);
+                            int index, real value);
 
 /* Add BC in form of prescribed displacements to a single specified
  * global d.o.f. of a global nodes vector
  * This function is called from solver_update_nodes_with_bc */
 void solver_update_node_with_bc(fea_solver_ptr self,
-                                       int index,
-                                       real value);
+                                int index,
+                                real value);
 
 /*
  * Update array solver->nodes with displacements from vector x
@@ -993,7 +995,7 @@ void solver_update_node_with_bc(fea_solver_ptr self,
  * 2) create deformed configuration by applying prescribed displacements
  */
 void solver_update_nodes_with_solution(fea_solver_ptr self,
-                                              real* x);
+                                       real* x);
 
 /*
  * Update solver->nodes array with prescribed displacements
@@ -1303,7 +1305,8 @@ real cdot(real* vector1, real* vector2, int size)
 void init_sp_matrix(sp_matrix_ptr mtx,
                     int rows,
                     int cols,
-                    int bandwidth)
+                    int bandwidth,
+                    sparse_storage_type type)
 {
   int i;
   if (mtx)
@@ -1311,17 +1314,23 @@ void init_sp_matrix(sp_matrix_ptr mtx,
     mtx->rows_count = rows;
     mtx->cols_count = cols;
     mtx->ordered = FALSE;
-    mtx->storage_type = CRS;
-    mtx->rows = (indexed_array*)malloc(sizeof(indexed_array)*rows);
-    /* create rows with fixed bandwidth */
-    for (i = 0; i < rows; ++ i)
+    mtx->storage_type = type;
+    if (type == CRS)
     {
-      mtx->rows[i].width = bandwidth;
-      mtx->rows[i].last_index = -1;
-      mtx->rows[i].indexes = (int*)malloc(sizeof(int)*bandwidth);
-      mtx->rows[i].values = (real*)malloc(sizeof(real)*bandwidth);
-      memset(mtx->rows[i].indexes,0,sizeof(int)*bandwidth);
-      memset(mtx->rows[i].values,0,sizeof(real)*bandwidth);
+      mtx->storage = (indexed_array*)malloc(sizeof(indexed_array)*rows);
+      /* create rows with fixed bandwidth */
+      for (i = 0; i < rows; ++ i)
+      {
+        mtx->storage[i].width = bandwidth;
+        mtx->storage[i].last_index = -1;
+        mtx->storage[i].indexes = (int*)malloc(sizeof(int)*bandwidth);
+        mtx->storage[i].values = (real*)malloc(sizeof(real)*bandwidth);
+        memset(mtx->storage[i].indexes,0,sizeof(int)*bandwidth);
+        memset(mtx->storage[i].values,0,sizeof(real)*bandwidth);
+      }
+    }
+    else                        /* CSS */
+    {
     }
   }
 }
@@ -1334,11 +1343,11 @@ void free_sp_matrix(sp_matrix_ptr mtx)
   {
     for (i = 0; i < mtx->rows_count; ++ i)
     {
-      free(mtx->rows[i].indexes);
-      free(mtx->rows[i].values);
+      free(mtx->storage[i].indexes);
+      free(mtx->storage[i].values);
     }
-    free(mtx->rows);
-    mtx->rows = (indexed_array*)0;
+    free(mtx->storage);
+    mtx->storage = (indexed_array*)0;
     mtx->cols_count = 0;
     mtx->rows_count = 0;
   }
@@ -1351,7 +1360,7 @@ void clear_sp_matrix(sp_matrix_ptr mtx)
   {
     for (i = 0; i < mtx->rows_count; ++ i)
     {
-      memset(mtx->rows[i].values,0,sizeof(real)*(mtx->rows[i].width));
+      memset(mtx->storage[i].values,0,sizeof(real)*(mtx->storage[i].width));
     }
   }
 }
@@ -1364,21 +1373,21 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
     mtx_to->rows_count = mtx_from->rows_count;
     mtx_to->cols_count = mtx_from->cols_count;
     mtx_to->ordered = mtx_from->ordered;
-    mtx_to->rows =
+    mtx_to->storage =
       (indexed_array*)malloc(sizeof(indexed_array)*mtx_to->rows_count);
     /* copy rows */
     for (i = 0; i < mtx_from->rows_count; ++ i)
     {
-      mtx_to->rows[i].width = mtx_from->rows[i].width;
-      mtx_to->rows[i].last_index = mtx_from->rows[i].last_index;
-      mtx_to->rows[i].indexes =
-        (int*)malloc(sizeof(int)*mtx_from->rows[i].width);
-      mtx_to->rows[i].values =
-        (real*)malloc(sizeof(real)*mtx_from->rows[i].width);
-      memcpy(mtx_to->rows[i].indexes, mtx_from->rows[i].indexes,
-             sizeof(int)*mtx_from->rows[i].width);
-      memcpy(mtx_to->rows[i].values, mtx_from->rows[i].values,
-             sizeof(real)*mtx_from->rows[i].width);
+      mtx_to->storage[i].width = mtx_from->storage[i].width;
+      mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
+      mtx_to->storage[i].indexes =
+        (int*)malloc(sizeof(int)*mtx_from->storage[i].width);
+      mtx_to->storage[i].values =
+        (real*)malloc(sizeof(real)*mtx_from->storage[i].width);
+      memcpy(mtx_to->storage[i].indexes, mtx_from->storage[i].indexes,
+             sizeof(int)*mtx_from->storage[i].width);
+      memcpy(mtx_to->storage[i].values, mtx_from->storage[i].values,
+             sizeof(real)*mtx_from->storage[i].width);
     }
   }
 }
@@ -1402,16 +1411,16 @@ void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
    */
   self->nonzeros = 0;
   for (i = 0; i < mtx->rows_count; ++ i)
-    self->nonzeros += mtx->rows[i].last_index + 1;
+    self->nonzeros += mtx->storage[i].last_index + 1;
   
   /* calculate number of upper-triangle elements */
   l_count = 0;
   u_count = 0;
   for (i = 0; i < mtx->rows_count; ++ i)
-    for (j = 0; j <= mtx->rows[i].last_index; ++ j)
-      if ( mtx->rows[i].indexes[j] > i)
+    for (j = 0; j <= mtx->storage[i].last_index; ++ j)
+      if ( mtx->storage[i].indexes[j] > i)
         u_count ++;
-      else if (mtx->rows[i].indexes[j] < i)
+      else if (mtx->storage[i].indexes[j] < i)
         l_count ++;
   /*
    * check if the number of upper triangle nonzero elements
@@ -1439,9 +1448,9 @@ void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
   {
     iptr = -1;
     self->iptr[i] = 0;
-    for (j = 0; j <= mtx->rows[i].last_index; ++ j)
+    for (j = 0; j <= mtx->storage[i].last_index; ++ j)
     {
-      if ( mtx->rows[i].indexes[j] < i)
+      if ( mtx->storage[i].indexes[j] < i)
       {
         /*
          * set a flag what we found the first nonzero element in
@@ -1450,15 +1459,15 @@ void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
         if (iptr == -1)
           iptr  = l_count;
         /* fill lower triangle values */
-        column = mtx->rows[i].indexes[j];
+        column = mtx->storage[i].indexes[j];
         self->jptr[l_count] = column;
-        self->lower_triangle[l_count] = mtx->rows[i].values[j];
+        self->lower_triangle[l_count] = mtx->storage[i].values[j];
         /* fill upper triangle values - column-wise */
-        for ( k = 0; k <= mtx->rows[column].last_index; ++ k)
-          if (mtx->rows[column].indexes[k] == i)
+        for ( k = 0; k <= mtx->storage[column].last_index; ++ k)
+          if (mtx->storage[column].indexes[k] == i)
           {
             self->upper_triangle[l_count] =
-              mtx->rows[column].values[k];
+              mtx->storage[column].values[k];
             break;
           }
         l_count ++;
@@ -1496,9 +1505,9 @@ real* sp_matrix_element(sp_matrix_ptr self,int i, int j)
       (j >= 0 && j < self->cols_count ))
   {
     /* loop by nonzero columns in row i */
-    for (index = 0; index <= self->rows[i].last_index; ++ index)
-      if (self->rows[i].indexes[index] == j)
-        return &self->rows[i].values[index];
+    for (index = 0; index <= self->storage[i].last_index; ++ index)
+      if (self->storage[i].indexes[index] == j)
+        return &self->storage[i].values[index];
   }
   return (real*)0;
 }
@@ -1514,11 +1523,11 @@ void sp_matrix_element_add(sp_matrix_ptr self,int i, int j, real value)
       (j >= 0 && j < self->cols_count ))
   {
     /* loop by nonzero columns in row i */
-    for (index = 0; index <= self->rows[i].last_index; ++ index)
-      if (self->rows[i].indexes[index] == j)
+    for (index = 0; index <= self->storage[i].last_index; ++ index)
+      if (self->storage[i].indexes[index] == j)
       {
         /* nonzerod element found, add to it */
-        self->rows[i].values[index] += value;
+        self->storage[i].values[index] += value;
         return;
       }
     /* needed to add a new element to the row */
@@ -1527,22 +1536,22 @@ void sp_matrix_element_add(sp_matrix_ptr self,int i, int j, real value)
      * check if bandwidth is not exceed and reallocate memory
      * if necessary
      */
-    if (self->rows[i].last_index == self->rows[i].width - 1)
+    if (self->storage[i].last_index == self->storage[i].width - 1)
     {
-      new_width = self->rows[i].width*2;
-      indexes = (int*)realloc(self->rows[i].indexes,new_width*sizeof(int));
+      new_width = self->storage[i].width*2;
+      indexes = (int*)realloc(self->storage[i].indexes,new_width*sizeof(int));
       assert(indexes);
-      self->rows[i].indexes = indexes;
-      values = (real*)realloc(self->rows[i].values,new_width*sizeof(real));
+      self->storage[i].indexes = indexes;
+      values = (real*)realloc(self->storage[i].values,new_width*sizeof(real));
       assert(values);
-      self->rows[i].values = values;
-      self->rows[i].width = new_width;
+      self->storage[i].values = values;
+      self->storage[i].width = new_width;
       self->ordered = FALSE;
     }
     /* add an element to the row */
-    self->rows[i].last_index++;
-    self->rows[i].values[self->rows[i].last_index] = value;
-    self->rows[i].indexes[self->rows[i].last_index] = j;
+    self->storage[i].last_index++;
+    self->storage[i].values[self->storage[i].last_index] = value;
+    self->storage[i].indexes[self->storage[i].last_index] = j;
   }
 }
 
@@ -1606,7 +1615,7 @@ void sp_matrix_finalize(sp_matrix_ptr self)
   int i;
   
   for (i = 0; i < self->rows_count; ++ i)
-    indexed_array_sort(&self->rows[i],0,self->rows[i].last_index);
+    indexed_array_sort(&self->storage[i],0,self->storage[i].last_index);
   self->ordered = TRUE;
 }
 
@@ -1616,8 +1625,8 @@ void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y)
   for ( i = 0; i < self->rows_count; ++ i)
   {
     y[i] = 0;
-    for ( j = 0; j <= self->rows[i].last_index; ++ j)
-      y[i] += self->rows[i].values[j]*x[self->rows[i].indexes[j]];
+    for ( j = 0; j <= self->storage[i].last_index; ++ j)
+      y[i] += self->storage[i].values[j]*x[self->storage[i].indexes[j]];
   }
 }
 
@@ -2115,10 +2124,10 @@ void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self,char* filename)
 #endif
 
 real solver_node_dof(fea_solver_ptr self,
-                            nodes_array_ptr nodes,
-                            int element,
-                            int node,
-                            int dof)
+                     nodes_array_ptr nodes,
+                     int element,
+                     int node,
+                     int dof)
 {
   return nodes->nodes[self->elements_p->elements[element][node]][dof];
 }
@@ -2183,7 +2192,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
   /* approximate bandwidth of a global matrix
    * usually sqrt(msize)*2*/
   bandwidth = (int)sqrt(msize)*2;
-  init_sp_matrix(&solver->global_mtx,msize,msize,bandwidth);
+  init_sp_matrix(&solver->global_mtx,msize,msize,bandwidth,CRS);
   /* allocate memory for global forces and solution vectors */
   solver->global_forces_vct = (real*)malloc(sizeof(real)*msize);
   solver->global_solution_vct = (real*)malloc(sizeof(real)*msize);
@@ -2237,7 +2246,7 @@ void free_fea_solver(fea_solver_ptr solver)
 }
 
 gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
-                                            int gauss_node_index)
+                                     int gauss_node_index)
 {
   gauss_node_ptr node = (gauss_node_ptr)0;
   int i,j;
@@ -2272,7 +2281,7 @@ gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
 
 /* Deallocate gauss node */
 void solver_free_gauss_node(fea_solver_ptr self,
-                                   gauss_node_ptr node)
+                            gauss_node_ptr node)
 {
   int i;
   if (node)
@@ -3686,7 +3695,7 @@ void expat_start_tag_handler(void *userData,
                              const XML_Char *name,
                              const XML_Char **atts);
 
-                             /* Expat End tag handler */
+/* Expat End tag handler */
 void expat_end_tag_handler(void *userData,
                            const XML_Char *name);
 
@@ -4519,7 +4528,7 @@ BOOL test_solver()
   v[0] = -5;
   v[1] = 2;
   v[2] = 13;
-  init_sp_matrix(&mtx,3,3,2);
+  init_sp_matrix(&mtx,3,3,2,CRS);
   sp_matrix_element_add(&mtx,0,2,-2);
   sp_matrix_element_add(&mtx,0,0,1);
 
@@ -4595,7 +4604,7 @@ BOOL test_ilu()
    * 3) LU - solvers for ILU decomposition
    */
 
-  init_sp_matrix(&mtx,7,7,5);
+  init_sp_matrix(&mtx,7,7,5,CRS);
 #define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
   MTX(&mtx,0,0,9);MTX(&mtx,0,3,3);MTX(&mtx,0,4,1);MTX(&mtx,0,6,1);
   MTX(&mtx,1,1,11);MTX(&mtx,1,2,2);MTX(&mtx,1,3,1);MTX(&mtx,1,6,2);
@@ -4677,7 +4686,7 @@ BOOL test_cholesky()
      {0., 0., 0., 0., 0., 0., 6.6388}};
 
   /* fill initial matrix */
-  init_sp_matrix(&mtx,7,7,5);
+  init_sp_matrix(&mtx,7,7,5,CRS);
 
 #define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
 /* {90, 6, 4, 46, 29, 0, 26}, */
