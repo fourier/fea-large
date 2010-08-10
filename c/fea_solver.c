@@ -696,13 +696,13 @@ void sp_matrix_solve_cg(sp_matrix_ptr self,
  * will contain norm of the residual at the end of iteration
  * x - output vector
  */
-void sp_matrix_solve_pcg(sp_matrix_ptr self,
-                         sp_matrix_skyline_ilu_ptr ilu,
-                         real* b,
-                         real* x0,
-                         int* max_iter,
-                         real* tolerance,
-                         real* x);
+void sp_matrix_solve_pcg_ilu(sp_matrix_ptr self,
+                             sp_matrix_skyline_ilu_ptr ilu,
+                             real* b,
+                             real* x0,
+                             int* max_iter,
+                             real* tolerance,
+                             real* x);
 
 
 /*
@@ -1606,10 +1606,10 @@ real* sp_matrix_element(sp_matrix_ptr self,int i, int j)
   {
     if (self->storage_type == CRS)
     {
-    /* loop by nonzero columns in row i */
-    for (index = 0; index <= self->storage[i].last_index; ++ index)
-      if (self->storage[i].indexes[index] == j)
-        return &self->storage[i].values[index];
+      /* loop by nonzero columns in row i */
+      for (index = 0; index <= self->storage[i].last_index; ++ index)
+        if (self->storage[i].indexes[index] == j)
+          return &self->storage[i].values[index];
     }
     else                        /* CCS */
     {
@@ -1802,7 +1802,7 @@ void sp_matrix_lower_solve(sp_matrix_ptr self,
       x[i] = b[i];
       for (j = 0; j <= self->storage[i].last_index &&
              self->storage[i].indexes[j] <= i-1; ++ j)
-          x[i] -= x[self->storage[i].indexes[j]]*self->storage[i].values[j];
+        x[i] -= x[self->storage[i].indexes[j]]*self->storage[i].values[j];
       x[i] /= self->storage[i].values[self->storage[i].last_index];
     }
   }
@@ -1935,13 +1935,13 @@ void sp_matrix_solve_cg(sp_matrix_ptr self,
   free(temp);
 }
 
-void sp_matrix_solve_pcg(sp_matrix_ptr self,
-                         sp_matrix_skyline_ilu_ptr ILU,                         
-                         real* b,
-                         real* x0,
-                         int* max_iter,
-                         real* tolerance,
-                         real* x)
+void sp_matrix_solve_pcg_ilu(sp_matrix_ptr self,
+                             sp_matrix_skyline_ilu_ptr ILU,                         
+                             real* b,
+                             real* x0,
+                             int* max_iter,
+                             real* tolerance,
+                             real* x)
 {
   /* Preconditioned Conjugate Gradient Algorithm */
   /*
@@ -4975,7 +4975,7 @@ BOOL test_pcg_ilu_solver()
   sp_matrix_compress(&mtx);
   sp_matrix_create_ilu(&mtx,&ilu);
 
-  sp_matrix_solve_pcg(&mtx,&ilu,v,v,&max_iter,&tolerance,x);
+  sp_matrix_solve_pcg_ilu(&mtx,&ilu,v,v,&max_iter,&tolerance,x);
 
   result = !( fabs(x[0]-1) > TOLERANCE ||
               fabs(x[1]-2) > TOLERANCE ||
