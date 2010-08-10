@@ -28,8 +28,8 @@ typedef int BOOL;
  * SLAE solver constants
  * possibly shall go to the initial data in future
  */
-#define MAX_ITER 10000
-#define TOLERANCE 1e-10
+const int MAX_ITER = 10000;
+const double TOLERANCE = 1e-10;
 
 /* Redefine type of the floating point values */
 #ifdef SINGLE
@@ -40,12 +40,20 @@ typedef double real;
 
 /* Equals macro for real values */
 #ifdef SINGLE
-#define EQL(x,y) (fabs((x)-(y))<= FLT_MIN)
+#define EQL(x,y) (fabs((x)-(y))<= (FLT_MIN))
+BOOL eql(float x,float y);
+BOOL eql(float x,float y) {return (fabs((x)-(y))<= (FLT_MIN))?TRUE:FALSE;}
 #else
-#define EQL(x,y) (fabs((x)-(y))<= DBL_MIN)
+#define EQL(x,y) (fabs((x)-(y))<= (DBL_MIN))
+BOOL eql(double x,double y);
+BOOL eql(double x,double y) {return (fabs((x)-(y))<= (DBL_MIN))?TRUE:FALSE;}
 #endif
 
+/* Kroneker delta */
 #define DELTA(i,j) ((i)==(j) ? 1 : 0)
+
+/* shortcut for adding of the matrix elements */
+#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
 
 /*************************************************************/
 /* Global variables                                          */
@@ -555,7 +563,8 @@ void free_load_step(fea_solver_ptr self, load_step_ptr step);
 void indexed_array_swap(indexed_array_ptr self,int i, int j);
 /* Performs in-place sort of the indexed array */
 void indexed_array_sort(indexed_array_ptr self, int l, int r);
-
+/* Print contents of the indexed array to the stdout  */
+void indexed_array_printf(indexed_array_ptr self);
 
 /*
  * Initializer for a sparse matrix with specified rows and columns
@@ -563,7 +572,7 @@ void indexed_array_sort(indexed_array_ptr self, int l, int r);
  * This function doesn't allocate the memory for the matrix itself;
  * only for its structures. Matrix mtx shall be already allocated
  * bandwdith - is a start bandwidth of a matrix row
- * type - CRS or CSS sparse matrix storage types
+ * type - CRS or CCS sparse matrix storage types
  */
 void init_sp_matrix(sp_matrix_ptr mtx,
                     int rows,
@@ -575,7 +584,7 @@ void init_sp_matrix(sp_matrix_ptr mtx,
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-void free_sp_matrix(sp_matrix_ptr mtx);
+sp_matrix_ptr free_sp_matrix(sp_matrix_ptr mtx);
 
 /*
  * Clear the sparse matrix.
@@ -586,10 +595,18 @@ void clear_sp_matrix(sp_matrix_ptr mtx);
 /*
  * Copy sparse matrix from mtx_from to mtx_to
  * This function assumes what mtx_to is already cleared by free_sp_matrix
- * or mtx_to is uninitialized pointer
+ * or mtx_to is a pointer to uninitialized sp_matrix structure
  */
 void copy_sp_matrix(sp_matrix_ptr mtx_from,
                     sp_matrix_ptr mtx_to);
+
+/*
+ * Converts matrix storage format CRS <=> CCS
+ * mtx_to shall be uninitialized sp_matrix structure
+ */
+void sp_matrix_convert(sp_matrix_ptr mtx_from,
+                       sp_matrix_ptr mtx_to,
+                       sparse_storage_type type);
 
 /*
  * Construct CSLR sparse matrix based on sp_matrix format
@@ -610,12 +627,12 @@ void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
 /* returns a pointer to the specific element
  * zero pointer if not found */
 real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
-/* adds an element value to the matrix node (i,j) */
-void sp_matrix_element_add(sp_matrix_ptr self,
+/* adds an element value to the matrix node (i,j) and return (i,j) */
+real sp_matrix_element_add(sp_matrix_ptr self,
                            int i, int j, real value);
 
 /* rearrange columns of a matrix to prepare for solving SLAE */
-void sp_matrix_finalize(sp_matrix_ptr self);
+void sp_matrix_compress(sp_matrix_ptr self);
 
 /*
  * Implements BLAS level 2 function SAXPY: y = A*x+b
@@ -626,6 +643,18 @@ void sp_matrix_finalize(sp_matrix_ptr self);
 /* Matrix-vector multiplication
  * y = A*x*/
 void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y);
+
+/*
+ * Solves SLAE L*x = b
+ * by given L sparse matrix 
+ * n - is the size of the x vector, and therefore
+ * the matrix L will be used up to nth row & column.
+ */
+void sp_matrix_lower_solve(sp_matrix_ptr self,
+                           int n,
+                           real* b,
+                           real* x);
+
 
 /*
  * Solve SLAE for a matrix self with right-part b
@@ -715,7 +744,8 @@ void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
                                        real* b,
                                        real* x);
 
-
+/* Print contens of the matrix in index form to the stdout */
+void sp_matrix_printf(sp_matrix_ptr self);
 #ifdef DUMP_DATA
 void sp_matrix_dump(sp_matrix_ptr self, char* filename);
 void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self, char* filename);
@@ -848,6 +878,8 @@ real cdot(real* vector1, real* vector2, int size);
 BOOL do_tests();
 /* test dense matrix operations */
 BOOL test_matrix();
+/* test sparse matrix operations */
+BOOL test_sp_matrix();
 /* test matrix/vector SLAE solver */
 BOOL test_solver();
 /* test ILU decomposition */
@@ -1308,40 +1340,36 @@ void init_sp_matrix(sp_matrix_ptr mtx,
                     int bandwidth,
                     sparse_storage_type type)
 {
-  int i;
+  int i,n;
   if (mtx)
   {
     mtx->rows_count = rows;
     mtx->cols_count = cols;
     mtx->ordered = FALSE;
     mtx->storage_type = type;
-    if (type == CRS)
+    n = type == CRS ? rows : cols;
+    mtx->storage = (indexed_array*)malloc(sizeof(indexed_array)*n);
+    /* create rows or cols with fixed bandwidth */
+    for (i = 0; i < n; ++ i)
     {
-      mtx->storage = (indexed_array*)malloc(sizeof(indexed_array)*rows);
-      /* create rows with fixed bandwidth */
-      for (i = 0; i < rows; ++ i)
-      {
-        mtx->storage[i].width = bandwidth;
-        mtx->storage[i].last_index = -1;
-        mtx->storage[i].indexes = (int*)malloc(sizeof(int)*bandwidth);
-        mtx->storage[i].values = (real*)malloc(sizeof(real)*bandwidth);
-        memset(mtx->storage[i].indexes,0,sizeof(int)*bandwidth);
-        memset(mtx->storage[i].values,0,sizeof(real)*bandwidth);
-      }
-    }
-    else                        /* CSS */
-    {
+      mtx->storage[i].width = bandwidth;
+      mtx->storage[i].last_index = -1;
+      mtx->storage[i].indexes = (int*)malloc(sizeof(int)*bandwidth);
+      mtx->storage[i].values = (real*)malloc(sizeof(real)*bandwidth);
+      memset(mtx->storage[i].indexes,0,sizeof(int)*bandwidth);
+      memset(mtx->storage[i].values,0,sizeof(real)*bandwidth);
     }
   }
 }
 
 
-void free_sp_matrix(sp_matrix_ptr mtx)
+sp_matrix_ptr free_sp_matrix(sp_matrix_ptr mtx)
 {
-  int i;
+  int i,n;
   if (mtx)
   {
-    for (i = 0; i < mtx->rows_count; ++ i)
+    n = mtx->storage_type  == CRS ? mtx->rows_count : mtx->cols_count;
+    for (i = 0; i < n; ++ i)
     {
       free(mtx->storage[i].indexes);
       free(mtx->storage[i].values);
@@ -1351,14 +1379,16 @@ void free_sp_matrix(sp_matrix_ptr mtx)
     mtx->cols_count = 0;
     mtx->rows_count = 0;
   }
+  return (sp_matrix_ptr)0;
 }
 
 void clear_sp_matrix(sp_matrix_ptr mtx)
 {
-  int i;
+  int i,n;
   if (mtx)
   {
-    for (i = 0; i < mtx->rows_count; ++ i)
+    n = mtx->storage_type  == CRS ? mtx->rows_count : mtx->cols_count;
+    for (i = 0; i < n; ++ i)
     {
       memset(mtx->storage[i].values,0,sizeof(real)*(mtx->storage[i].width));
     }
@@ -1367,16 +1397,18 @@ void clear_sp_matrix(sp_matrix_ptr mtx)
 
 void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
 {
-  int i;
+  int i,n;
   if (mtx_from && mtx_to)
   {
+    n = mtx_from->storage_type  == CRS ? mtx_from->rows_count :
+      mtx_from->cols_count;
     mtx_to->rows_count = mtx_from->rows_count;
     mtx_to->cols_count = mtx_from->cols_count;
     mtx_to->ordered = mtx_from->ordered;
     mtx_to->storage =
-      (indexed_array*)malloc(sizeof(indexed_array)*mtx_to->rows_count);
+      (indexed_array*)malloc(sizeof(indexed_array)*n);
     /* copy rows */
-    for (i = 0; i < mtx_from->rows_count; ++ i)
+    for (i = 0; i < n; ++ i)
     {
       mtx_to->storage[i].width = mtx_from->storage[i].width;
       mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
@@ -1392,6 +1424,39 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
   }
 }
 
+void sp_matrix_convert(sp_matrix_ptr mtx_from,
+                       sp_matrix_ptr mtx_to,
+                       sparse_storage_type type)
+{
+  int i,j;
+  if (type == mtx_from->storage_type)
+    return;
+  init_sp_matrix(mtx_to,
+                 mtx_from->rows_count,
+                 mtx_from->cols_count,
+                 mtx_from->storage[0].width,
+                 type);
+  if (type == CCS)              /* CRS -> CCS */
+  {
+    for (i = 0; i < mtx_from->rows_count; ++ i)
+    {
+      for (j = 0; j <= mtx_from->storage[i].last_index; ++ j)
+        MTX(mtx_to,i,mtx_from->storage[i].indexes[j],
+            mtx_from->storage[i].values[j]);
+    }
+  }
+  else                          /* CCS -> CRS*/
+  {
+    for (i = 0; i < mtx_from->cols_count; ++ i)
+    {
+      for (j = 0; j <= mtx_from->storage[i].last_index; ++ j)
+        MTX(mtx_to,mtx_from->storage[i].indexes[j],i,
+            mtx_from->storage[i].values[j]);
+    }
+  }
+  
+}
+
 void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 {
   /*
@@ -1403,6 +1468,8 @@ void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 
   /* assert what mtx is already reordered */
   assert(mtx->ordered == TRUE);
+  /* currenty implemented conversion only from CRS format */
+  assert(mtx->storage_type == CRS);
   
   self->rows_count = mtx->rows_count;
   self->cols_count = mtx->cols_count;
@@ -1504,55 +1571,67 @@ real* sp_matrix_element(sp_matrix_ptr self,int i, int j)
       (i >= 0 && i < self->rows_count ) &&
       (j >= 0 && j < self->cols_count ))
   {
+    if (self->storage_type == CRS)
+    {
     /* loop by nonzero columns in row i */
     for (index = 0; index <= self->storage[i].last_index; ++ index)
       if (self->storage[i].indexes[index] == j)
         return &self->storage[i].values[index];
+    }
+    else                        /* CCS */
+    {
+      /* loop by nonzero rows in column i */
+      for (index = 0; index <= self->storage[j].last_index; ++ index)
+        if (self->storage[j].indexes[index] == i)
+          return &self->storage[j].values[index];
+    }
   }
   return (real*)0;
 }
 
-void sp_matrix_element_add(sp_matrix_ptr self,int i, int j, real value)
+real sp_matrix_element_add(sp_matrix_ptr self,int i, int j, real value)
 {
-  int index,new_width;
+  int index,new_width,I,J;
   int* indexes = (int*)0;
   real* values = (real*)0;
   /* check for matrix and if i,j are proper indicies */
-  if (self && 
-      (i >= 0 && i < self->rows_count ) &&
-      (j >= 0 && j < self->cols_count ))
-  {
-    /* loop by nonzero columns in row i */
-    for (index = 0; index <= self->storage[i].last_index; ++ index)
-      if (self->storage[i].indexes[index] == j)
-      {
-        /* nonzerod element found, add to it */
-        self->storage[i].values[index] += value;
-        return;
-      }
-    /* needed to add a new element to the row */
-    
-    /*
-     * check if bandwidth is not exceed and reallocate memory
-     * if necessary
-     */
-    if (self->storage[i].last_index == self->storage[i].width - 1)
+  assert (self && 
+          (i >= 0 && i < self->rows_count ) &&
+          (j >= 0 && j < self->cols_count ));
+  /* set I and J to be i and j in case of CRS or j and i otherwise */
+  I = self->storage_type == CRS ? i : j;
+  J = self->storage_type == CRS ? j : i;
+  /* loop by nonzero columns in row/col i */
+  for (index = 0; index <= self->storage[I].last_index; ++ index)
+    if (self->storage[I].indexes[index] == J)
     {
-      new_width = self->storage[i].width*2;
-      indexes = (int*)realloc(self->storage[i].indexes,new_width*sizeof(int));
-      assert(indexes);
-      self->storage[i].indexes = indexes;
-      values = (real*)realloc(self->storage[i].values,new_width*sizeof(real));
-      assert(values);
-      self->storage[i].values = values;
-      self->storage[i].width = new_width;
-      self->ordered = FALSE;
+      /* nonzerod element found, add to it */
+      self->storage[I].values[index] += value;
+      return self->storage[I].values[index];
     }
-    /* add an element to the row */
-    self->storage[i].last_index++;
-    self->storage[i].values[self->storage[i].last_index] = value;
-    self->storage[i].indexes[self->storage[i].last_index] = j;
+  /* needed to add a new element to the row/col */
+    
+  /*
+   * check if bandwidth is not exceed and reallocate memory
+   * if necessary
+   */
+  if (self->storage[I].last_index == self->storage[J].width - 1)
+  {
+    new_width = self->storage[I].width*2;
+    indexes = (int*)realloc(self->storage[I].indexes,new_width*sizeof(int));
+    assert(indexes);
+    self->storage[I].indexes = indexes;
+    values = (real*)realloc(self->storage[I].values,new_width*sizeof(real));
+    assert(values);
+    self->storage[I].values = values;
+    self->storage[I].width = new_width;
+    self->ordered = FALSE;
   }
+  /* add an element to the row/col */
+  self->storage[I].last_index++;
+  self->storage[I].values[self->storage[I].last_index] = value;
+  self->storage[I].indexes[self->storage[I].last_index] = J;
+  return value;
 }
 
 /* Swap 2 elements of the indexed array */
@@ -1609,8 +1688,24 @@ void indexed_array_sort(indexed_array_ptr self, int l, int r)
   }
 }
 
+void indexed_array_printf(indexed_array_ptr self)
+{
+  int i;
+  if (self)
+  {
+    printf("indexes = [");
+    for (i = 0; i < self->last_index; ++ i)
+      printf("%d,\t",self->indexes[i]);
+    printf("%d]\n",self->indexes[i]);
+    printf("values  = [");
+    for (i = 0; i < self->last_index; ++ i)
+      printf("%f,\t",self->values[i]);
+    printf("%f]\n",self->values[i]);
+  }
+}
 
-void sp_matrix_finalize(sp_matrix_ptr self)
+
+void sp_matrix_compress(sp_matrix_ptr self)
 {
   int i;
   
@@ -1622,11 +1717,61 @@ void sp_matrix_finalize(sp_matrix_ptr self)
 void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y)
 {
   int i,j;
-  for ( i = 0; i < self->rows_count; ++ i)
+  memset(y,0,sizeof(real)*self->rows_count);
+  if (self->storage_type == CRS)
   {
-    y[i] = 0;
-    for ( j = 0; j <= self->storage[i].last_index; ++ j)
-      y[i] += self->storage[i].values[j]*x[self->storage[i].indexes[j]];
+    for ( i = 0; i < self->rows_count; ++ i)
+    {
+      for ( j = 0; j <= self->storage[i].last_index; ++ j)
+        y[i] += self->storage[i].values[j]*x[self->storage[i].indexes[j]];
+    }
+  }
+  else                          /* CCS */
+  {
+    for ( j = 0; j < self->cols_count; ++ j)
+    {
+      for ( i = 0; i<= self->storage[j].last_index; ++ i)
+        y[self->storage[j].indexes[i]] += self->storage[j].values[i]*x[j];
+    }
+  }
+}
+
+void sp_matrix_lower_solve(sp_matrix_ptr self,
+                           int n,
+                           real* b,
+                           real* x)
+{
+  int i,j;
+  assert(self);
+  assert(b);
+  assert(x);
+  assert(n>0 && n <= self->rows_count);
+
+  memset(x,0,sizeof(real)*n);
+  
+  if (!self->ordered)
+    sp_matrix_compress(self);
+  if (self->storage_type == CCS)
+  {
+    for ( j = 0; j < n; ++ j)
+      x[j] = b[j];
+    for ( j = 0; j < n; ++ j)
+    {
+      x[j] /= self->storage[j].values[0]; 
+      for (i = 1; i <= self->storage[j].last_index; ++ i)
+        x[self->storage[j].indexes[i]] -= x[j]*self->storage[j].values[i];
+    }
+  }
+  else                          /* CRS */
+  {
+    for ( i = 0; i < n; ++ i)
+    {
+      x[i] = b[i];
+      for (j = 0; j <= self->storage[i].last_index &&
+             self->storage[i].indexes[j] <= i-1; ++ j)
+          x[i] -= x[self->storage[i].indexes[j]]*self->storage[i].values[j];
+      x[i] /= self->storage[i].values[self->storage[i].last_index];
+    }
   }
 }
 
@@ -1639,7 +1784,7 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
   real* r = malloc(self->rows_count*sizeof(real));
   memset(r,0,self->rows_count*sizeof(real));
   /* reorder columns for to prepare to solve SLAE */
-  sp_matrix_finalize(self);
+  sp_matrix_compress(self);
   /* sp_matrix_solve_pcg(self,b,b,&max_iter,&tolerance,x); */
   sp_matrix_solve_cg(self,b,b,&max_iter,&tolerance,x);
   /* Calculare residual r = A*x-b */
@@ -1650,9 +1795,9 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
   for ( i = 0; i < self->rows_count; ++ i)
     tol += r[i]*r[i];
   tol = sqrt(tol);
-
-  printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n",
-         max_iter,tolerance,tol);
+  /* TODO: move iter, tolerance1 and tolerance2 to the output parameters */
+  /* printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n", */
+  /*        max_iter,tolerance,tol); */
   free(r);
 }
 
@@ -2062,7 +2207,13 @@ void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
   }
 }
 
-
+void sp_matrix_printf(sp_matrix_ptr self)
+{
+  int i,n;
+  n = self->storage_type == CRS ? self->rows_count : self->cols_count;
+  for (i = 0; i < n; ++ i)
+    indexed_array_printf(&self->storage[i]);
+}
 
 #ifdef DUMP_DATA
 void sp_matrix_dump(sp_matrix_ptr self,char* filename)
@@ -4492,60 +4643,153 @@ BOOL test_matrix()
   for (i = 0; i < 3; ++ i)
     for (j = 0; j < 3; ++ j)
       result &= EQL(R[i][j],result_matmul[i][j]);
-  if(!result) return FALSE;
 
-  /* test A x B' */
-  matrix_transpose_mul3x3(A,B,R);
-  for (i = 0; i < 3; ++ i)
-    for (j = 0; j < 3; ++ j)
-      result &= EQL(R[i][j],result_matmul_transp[i][j]);
-  if(!result) return FALSE;
+  if (result)
+  {
+    /* test A x B' */
+    matrix_transpose_mul3x3(A,B,R);
+    for (i = 0; i < 3; ++ i)
+      for (j = 0; j < 3; ++ j)
+        result &= EQL(R[i][j],result_matmul_transp[i][j]);
+  }
 
-  /* test A' x B */
-  matrix_transpose2_mul3x3(A,B,R);
-  for (i = 0; i < 3; ++ i)
-    for (j = 0; j < 3; ++ j)
-      result &= EQL(R[i][j],result_matmul_transp2[i][j]);
-  if(!result) return FALSE;
+  if (result)
+  {
+    /* test A' x B */
+    matrix_transpose2_mul3x3(A,B,R);
+    for (i = 0; i < 3; ++ i)
+      for (j = 0; j < 3; ++ j)
+        result &= EQL(R[i][j],result_matmul_transp2[i][j]);
+  }
+  printf("test_matrix result: *%s*\n",result ? "pass" : "fail");
+  return result;
+}
 
+BOOL test_sp_matrix()
+{
+  BOOL result = TRUE;
+  sp_matrix mtx,mtx2,mtx3;
+  real b[] = {1, 2, 3, 4, 3, 2, 1};
+  real expected[] = {25, 34, 40, 45, 42, 16, 23};
+  int size = sizeof(expected)/sizeof(real);
+  int i;
+  real x[] = {0,0,0,0,0,0,0};
+  /*
+   * Sparse matrix
+   * 9  0  0  3  1  0  1
+   * 0  11 2  1  0  0  2
+   * 0  1  10 2  0  0  0
+   * 0  0  2  9  1  0  0
+   * 1  0  0  1  12 0  1
+   * 0  0  0  0  0  8  0
+   * 2  2  0  0  3  0  8
+   */
+
+  init_sp_matrix(&mtx,7,7,5,CRS);
+
+  MTX(&mtx,0,0,9);MTX(&mtx,0,3,3);MTX(&mtx,0,4,1);MTX(&mtx,0,6,1);
+  MTX(&mtx,1,1,11);MTX(&mtx,1,2,2);MTX(&mtx,1,3,1);MTX(&mtx,1,6,2);
+  MTX(&mtx,2,1,1);MTX(&mtx,2,2,10);MTX(&mtx,2,3,2);
+  MTX(&mtx,3,2,2);MTX(&mtx,3,3,9);MTX(&mtx,3,4,1);
+  MTX(&mtx,4,0,1);MTX(&mtx,4,3,1);MTX(&mtx,4,4,12);MTX(&mtx,4,6,1);
+  MTX(&mtx,5,5,8);
+  MTX(&mtx,6,0,2);MTX(&mtx,6,1,2);MTX(&mtx,6,4,3);MTX(&mtx,6,6,8);
+
+  sp_matrix_compress(&mtx);
+
+  /* 1st test - matrix-vector multiplication */
+  sp_matrix_mv(&mtx,b,x);
+  for (i = 0; i < size; ++ i)
+    result &= eql(x[i],expected[i]);
+  
+  /* 2nd test - conversion btw different storage types */
+  if (result)
+  {
+    sp_matrix_convert(&mtx,&mtx2,CCS);
+    sp_matrix_mv(&mtx2,b,x);
+    for (i = 0; i < size; ++ i)
+    {
+      result &= eql(x[i],expected[i]);
+    }
+  }
+  if (result)
+  {
+    sp_matrix_convert(&mtx2,&mtx3,CRS);
+    sp_matrix_mv(&mtx3,b,x);
+    for (i = 0; i < size; ++ i)
+    {
+      result &= eql(x[i],expected[i]);
+    }
+    free_sp_matrix(&mtx2);
+    free_sp_matrix(&mtx3);
+  }
+  
+  free_sp_matrix(&mtx);
+  printf("test_sp_matrix result: *%s*\n",result ? "pass" : "fail");
   return result;
 }
 
 BOOL test_solver()
 {
   BOOL result = TRUE;
+  int i;
   sp_matrix mtx;
-  real v[3],x[3];
+  real v[3] = {0}, x[3] = {0}, x2[5] = {0};
+  real x2_expected[] = {1,2,-3,5,-7};
+  real b[] = {-1, 5, -10, 40, -71};
   /* matrix solver test  */
-  
+
+  /* Test 1: */
   /*
    * | 1 0 -2 |   | 1 |   |-5 |
    * | 0 1  0 | x | 2 | = | 2 | 
    * |-2 0  5 |   | 3 |   |13 |
    */
-   
   memset(x,0,3);
   v[0] = -5;
   v[1] = 2;
   v[2] = 13;
   init_sp_matrix(&mtx,3,3,2,CRS);
-  sp_matrix_element_add(&mtx,0,2,-2);
-  sp_matrix_element_add(&mtx,0,0,1);
-
-  sp_matrix_element_add(&mtx,1,1,1);
   
-  sp_matrix_element_add(&mtx,2,2,5);
-  sp_matrix_element_add(&mtx,2,0,-2);
+  MTX(&mtx,0,0,1);MTX(&mtx,0,2,-2);
+  MTX(&mtx,1,1,1);
+  MTX(&mtx,2,0,-2);MTX(&mtx,2,2,5);
 
 
-  sp_matrix_finalize(&mtx);
+  sp_matrix_compress(&mtx);
   
   sp_matrix_solve(&mtx,v,x);
   result = !( fabs(x[0]-1) > TOLERANCE ||
               fabs(x[1]-2) > TOLERANCE ||
               fabs(x[2]-3) > TOLERANCE);
-
   free_sp_matrix(&mtx);
+
+  /* Test 2: */
+  /*
+   * |-1  0  0  0  0 |   | 1 |   |-1 |
+   * | 1  2  0  0  0 |   | 2 |   | 5 |
+   * |-1  0  3  0  0 | x |-3 | = |-10|
+   * | 0  5  0  6  0 |   | 5 |   | 40|
+   * | 0  0 -2  0 11 |   |-7 |   |-71|
+   */
+  if (result)
+  {
+    init_sp_matrix(&mtx,5,5,3,CCS);
+    MTX(&mtx,0,0,-1);
+    MTX(&mtx,1,0,1);MTX(&mtx,1,1,2);
+    MTX(&mtx,2,0,-1);MTX(&mtx,2,2,3);
+    MTX(&mtx,3,1,5);MTX(&mtx,3,3,6);
+    MTX(&mtx,4,2,-2);MTX(&mtx,4,4,11);
+    sp_matrix_lower_solve(&mtx,5,b,x2);
+    for (i = 0; i < 5; ++ i)
+    {
+      printf("%f == %f\n",x2_expected[i],x2[i]);
+      result &= EQL(x2_expected[i],x2[i]);
+    }
+    free_sp_matrix(&mtx);
+  }
+  
+  printf("test_solver result: *%s*\n",result ? "pass" : "fail");
   return result;
 }
 
@@ -4605,7 +4849,7 @@ BOOL test_ilu()
    */
 
   init_sp_matrix(&mtx,7,7,5,CRS);
-#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
+
   MTX(&mtx,0,0,9);MTX(&mtx,0,3,3);MTX(&mtx,0,4,1);MTX(&mtx,0,6,1);
   MTX(&mtx,1,1,11);MTX(&mtx,1,2,2);MTX(&mtx,1,3,1);MTX(&mtx,1,6,2);
   MTX(&mtx,2,1,1);MTX(&mtx,2,2,10);MTX(&mtx,2,3,2);
@@ -4614,50 +4858,62 @@ BOOL test_ilu()
   MTX(&mtx,4,0,1);MTX(&mtx,4,3,1);MTX(&mtx,4,4,12);MTX(&mtx,4,6,1);
   MTX(&mtx,5,5,8);
   MTX(&mtx,6,0,2);MTX(&mtx,6,1,2);MTX(&mtx,6,4,3);MTX(&mtx,6,6,8);
-#undef MTX
 
-  sp_matrix_finalize(&mtx);
+  sp_matrix_compress(&mtx);
   init_sp_matrix_skyline(&m,&mtx);
   init_copy_sp_matrix_skyline_ilu(&ILU,&m);
 
   for (i = 0; i <  m.rows_count; ++ i)
     result &= fabs(ILU.ilu_diag[i] - lu_diag_expected[i]) < 1e-5;
   
-  for (i = 0; i <  m.tr_nonzeros; ++ i)
-    result &= fabs(ILU.ilu_lowertr[i] - lu_lowertr_expected[i]) < 1e-5;
-
-  for (i = 0; i <  m.tr_nonzeros; ++ i)
-    result &= fabs(ILU.ilu_uppertr[i] - lu_uppertr_expected[i]) < 1e-5;
+  if (result)
+  {
+    for (i = 0; i <  m.tr_nonzeros; ++ i)
+      result &= fabs(ILU.ilu_lowertr[i] - lu_lowertr_expected[i]) < 1e-5;
+  }
+  
+  if (result)
+  {       
+    for (i = 0; i <  m.tr_nonzeros; ++ i)
+      result &= fabs(ILU.ilu_uppertr[i] - lu_uppertr_expected[i]) < 1e-5;
+  }
 
   /*
    * test for solving Lx=b
    */
-
-  /* prepare a right-part vector */
-  sp_matrix_skyline_ilu_lower_mv(&ILU,x_exact,b);
+  if (result)
+  {
+    /* prepare a right-part vector */
+    sp_matrix_skyline_ilu_lower_mv(&ILU,x_exact,b);
+    
+    /* solve for x */
+    sp_matrix_skyline_ilu_lower_solve(&ILU,b,x);
+    /* test result */
+    for ( i = 0; i < m.rows_count; ++ i)
+      result &= EQL(x[i],x_exact[i]);
+  }
   
-  /* solve for x */
-  sp_matrix_skyline_ilu_lower_solve(&ILU,b,x);
-  /* test result */
-  for ( i = 0; i < m.rows_count; ++ i)
-    result &= EQL(x[i],x_exact[i]);
-
   /*
    * test for solving Ux=b
    */
-  memset(b,0,sizeof(b));
-  memset(x,0,sizeof(x));
-  /* prepare a right-part vector */
-  sp_matrix_skyline_ilu_upper_mv(&ILU,x_exact,b);
+  if (result)
+  {
+    memset(b,0,sizeof(b));
+    memset(x,0,sizeof(x));
+    /* prepare a right-part vector */
+    sp_matrix_skyline_ilu_upper_mv(&ILU,x_exact,b);
     
-  /* solve for x */
-  sp_matrix_skyline_ilu_upper_solve(&ILU,b,x);
-  /* test result */
-  for ( i = 0; i < m.rows_count; ++ i)
-    result &= EQL(x[i],x_exact[i]);
+    /* solve for x */
+    sp_matrix_skyline_ilu_upper_solve(&ILU,b,x);
+    /* test result */
+    for ( i = 0; i < m.rows_count; ++ i)
+      result &= EQL(x[i],x_exact[i]);
 
-  free_sp_matrix(&mtx);
-  free_sp_matrix_skyline_ilu(&ILU);
+    free_sp_matrix(&mtx);
+    free_sp_matrix_skyline_ilu(&ILU);
+  }
+  
+  printf("test_ilu result: *%s*\n",result ? "pass" : "fail");
   return result;
 }
 
@@ -4688,7 +4944,6 @@ BOOL test_cholesky()
   /* fill initial matrix */
   init_sp_matrix(&mtx,7,7,5,CRS);
 
-#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
 /* {90, 6, 4, 46, 29, 0, 26}, */
   MTX(&mtx,0,0,90);MTX(&mtx,0,1,6);MTX(&mtx,0,2,4);MTX(&mtx,0,3,46);
   MTX(&mtx,0,4,29);MTX(&mtx,0,6,26);
@@ -4709,12 +4964,18 @@ BOOL test_cholesky()
 /* {26, 38, 4, 6, 37, 0, 70} */
   MTX(&mtx,6,0,26);MTX(&mtx,6,1,38);MTX(&mtx,6,2,4);MTX(&mtx,6,3,6);
   MTX(&mtx,6,4,37);MTX(&mtx,6,6,70);
-#undef MTX
+
   /* prepare initial matrix for conversion to Skyline format */
-  sp_matrix_finalize(&mtx);
+  sp_matrix_compress(&mtx);
   /* initialize skyline format from given CRS format */
   init_sp_matrix_skyline(&m,&mtx);
 
+
+  /* clear matrix */
+  free_sp_matrix(&mtx);
+  free_sp_matrix_skyline(&m);
+  
+  printf("test_cholesky result: *%s*\n",result ? "pass" : "fail");
   return result;
 }
 
@@ -4723,6 +4984,7 @@ BOOL do_tests()
 {
   BOOL result = TRUE;
   result &= test_matrix();
+  result &= test_sp_matrix();
   result &= test_solver();
   result &= test_ilu();
   result &= test_cholesky();
