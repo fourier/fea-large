@@ -609,6 +609,11 @@ void sp_matrix_convert(sp_matrix_ptr mtx_from,
                        sparse_storage_type type);
 
 /*
+ * Creates ILU decomposition of the sparse matrix 
+ */
+void sp_matrix_create_ilu(sp_matrix_ptr self,sp_matrix_skyline_ilu_ptr ilu);
+
+/*
  * Construct CSLR sparse matrix based on sp_matrix format
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
@@ -692,6 +697,7 @@ void sp_matrix_solve_cg(sp_matrix_ptr self,
  * x - output vector
  */
 void sp_matrix_solve_pcg(sp_matrix_ptr self,
+                         sp_matrix_skyline_ilu_ptr ilu,
                          real* b,
                          real* x0,
                          int* max_iter,
@@ -880,8 +886,15 @@ BOOL do_tests();
 BOOL test_matrix();
 /* test sparse matrix operations */
 BOOL test_sp_matrix();
-/* test matrix/vector SLAE solver */
-BOOL test_solver();
+/* test set of triangle solvers */
+BOOL test_triangle_solver();
+/* test matrix/vector Conjugate Gradient SLAE solver */
+BOOL test_cg_solver();
+/*
+ * test matrix/vector Preconditioned Conjugate Gradient SLAE solver
+ * where preconditioner M = ILU decomposition
+ */
+BOOL test_pcg_ilu_solver();
 /* test ILU decomposition */
 BOOL test_ilu();
 /* test Cholesky decomposition */
@@ -1457,6 +1470,26 @@ void sp_matrix_convert(sp_matrix_ptr mtx_from,
   
 }
 
+
+void sp_matrix_create_ilu(sp_matrix_ptr self,sp_matrix_skyline_ilu_ptr ilu)
+{
+  sp_matrix_skyline A;
+  /* reorder self if not already reordered */
+  if (!self->ordered)
+    sp_matrix_compress(self);
+  /* initialize skyline matrix for ILU decomposition */
+  init_sp_matrix_skyline(&A,self);
+  /*
+   * create ILU decomposition of the sparse matrix in skyline format
+   * taking ownership of the skyline A matrix
+   */
+  init_copy_sp_matrix_skyline_ilu(ilu,&A);
+  /*
+   * since init_copy_sp_matrix_skyline_ilu takes the ownership
+   * of the A matrix it is not needed to free A matrix
+   */
+}
+
 void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 {
   /*
@@ -1903,6 +1936,7 @@ void sp_matrix_solve_cg(sp_matrix_ptr self,
 }
 
 void sp_matrix_solve_pcg(sp_matrix_ptr self,
+                         sp_matrix_skyline_ilu_ptr ILU,                         
                          real* b,
                          real* x0,
                          int* max_iter,
@@ -1928,10 +1962,6 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
   int max_iterations = max_iter ? *max_iter : MAX_ITER;
   real tol = tolerance ? *tolerance : TOLERANCE;
   
-  /* skyline form of the initial matrix */
-  sp_matrix_skyline A;
-  sp_matrix_skyline_ilu ILU;    /* preconditioner */
-
   real* r;              /* residual */
   real* r1;             /* backup of the residual */
   real* p;              /* search direction */
@@ -1944,19 +1974,6 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
   p = malloc(size);
   z = malloc(size);
   temp = malloc(size);
-
-  /* assuming self is already reordered */
-  /* initialize skyline matrix for ILU decomposition */
-  init_sp_matrix_skyline(&A,self);
-#ifdef DUMP_DATA
-  sp_matrix_skyline_dump(&A);
-#endif
-  /*
-   * create ILU decomposition of the sparse matrix in skyline format
-   * taking ownership of the skyline A matrix
-   */
-  init_copy_sp_matrix_skyline_ilu(&ILU,&A);
-
   
   /* clear vectors */
   memset(r,0,size);
@@ -1982,9 +1999,9 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
    * y = U*x, => L*y = b
    * U*x = y => x
    */ 
-  sp_matrix_skyline_ilu_lower_solve(&ILU,r1,temp); /* temp = L^{-1}*r */
+  sp_matrix_skyline_ilu_lower_solve(ILU,r1,temp); /* temp = L^{-1}*r */
   /* r1 now changed, temp contains solution */
-  sp_matrix_skyline_ilu_upper_solve(&ILU,temp,z); /* z = U^{-1}*temp */
+  sp_matrix_skyline_ilu_upper_solve(ILU,temp,z); /* z = U^{-1}*temp */
   /* temp now changed, z contains solution*/
   
   /* p_0 = z_0 */
@@ -2028,8 +2045,8 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
     /* z_{j+1} = M^{-1}*r_{j+1} */
     memcpy(r1,r,size);
     memset(temp,0,size);
-    sp_matrix_skyline_ilu_lower_solve(&ILU,r1,temp); /* temp = L^{-1}*r */
-    sp_matrix_skyline_ilu_upper_solve(&ILU,temp,z); /* z = U^{-1}*temp */
+    sp_matrix_skyline_ilu_lower_solve(ILU,r1,temp); /* temp = L^{-1}*r */
+    sp_matrix_skyline_ilu_upper_solve(ILU,temp,z); /* z = U^{-1}*temp */
 
     
     /* compute (r_{j+1},z_{j+1}) */
@@ -2053,11 +2070,6 @@ void sp_matrix_solve_pcg(sp_matrix_ptr self,
   free(z);
   free(p);
   free(temp);
-  /*
-   * since init_copy_sp_matrix_skyline_ilu takes the ownership
-   * of the A matrix we will need to free only ILU decomposition
-   */
-  free_sp_matrix_skyline_ilu(&ILU);
 }
 
 void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
@@ -4729,14 +4741,56 @@ BOOL test_sp_matrix()
   return result;
 }
 
-BOOL test_solver()
+BOOL test_triangle_solver()
 {
   BOOL result = TRUE;
   int i;
-  sp_matrix mtx;
-  real v[3] = {0}, x[3] = {0}, x2[5] = {0};
-  real x2_expected[] = {1,2,-3,5,-7};
+  sp_matrix mtx,mtx2;
+  real x[5] = {0};
+  real x_expected[] = {1,2,-3,5,-7};
   real b[] = {-1, 5, -10, 40, -71};
+
+  /*
+   * |-1  0  0  0  0 |   | 1 |   |-1 |
+   * | 1  2  0  0  0 |   | 2 |   | 5 |
+   * |-1  0  3  0  0 | x |-3 | = |-10|
+   * | 0  5  0  6  0 |   | 5 |   | 40|
+   * | 0  0 -2  0 11 |   |-7 |   |-71|
+   */
+  init_sp_matrix(&mtx,5,5,3,CRS);
+  MTX(&mtx,0,0,-1);
+  MTX(&mtx,1,0,1);MTX(&mtx,1,1,2);
+  MTX(&mtx,2,0,-1);MTX(&mtx,2,2,3);
+  MTX(&mtx,3,1,5);MTX(&mtx,3,3,6);
+  MTX(&mtx,4,2,-2);MTX(&mtx,4,4,11);
+  sp_matrix_lower_solve(&mtx,5,b,x);
+  for (i = 0; i < 5; ++ i)
+    result &= EQL(x_expected[i],x[i]);
+  
+  if (result)
+  {
+    sp_matrix_convert(&mtx,&mtx2,CCS);
+    memset(x,0,sizeof(real)*5);
+    sp_matrix_lower_solve(&mtx,5,b,x);
+    for (i = 0; i < 5; ++ i)
+      result &= EQL(x_expected[i],x[i]);
+    free_sp_matrix(&mtx2);
+  }
+  
+  free_sp_matrix(&mtx);
+  
+  printf("test_triangle_solver result: *%s*\n",result ? "pass" : "fail");
+  return result;
+}
+
+BOOL test_cg_solver()
+{
+  BOOL result = TRUE;
+  sp_matrix mtx;
+  real v[3] = {0}, x[3] = {0};
+  int max_iter = 20000;
+  real tolerance = 1e-15;
+
   /* matrix solver test  */
 
   /* Test 1: */
@@ -4755,41 +4809,15 @@ BOOL test_solver()
   MTX(&mtx,1,1,1);
   MTX(&mtx,2,0,-2);MTX(&mtx,2,2,5);
 
-
   sp_matrix_compress(&mtx);
-  
-  sp_matrix_solve(&mtx,v,x);
+  sp_matrix_solve_cg(&mtx,v,v,&max_iter,&tolerance,x);
+
   result = !( fabs(x[0]-1) > TOLERANCE ||
               fabs(x[1]-2) > TOLERANCE ||
               fabs(x[2]-3) > TOLERANCE);
   free_sp_matrix(&mtx);
-
-  /* Test 2: */
-  /*
-   * |-1  0  0  0  0 |   | 1 |   |-1 |
-   * | 1  2  0  0  0 |   | 2 |   | 5 |
-   * |-1  0  3  0  0 | x |-3 | = |-10|
-   * | 0  5  0  6  0 |   | 5 |   | 40|
-   * | 0  0 -2  0 11 |   |-7 |   |-71|
-   */
-  if (result)
-  {
-    init_sp_matrix(&mtx,5,5,3,CCS);
-    MTX(&mtx,0,0,-1);
-    MTX(&mtx,1,0,1);MTX(&mtx,1,1,2);
-    MTX(&mtx,2,0,-1);MTX(&mtx,2,2,3);
-    MTX(&mtx,3,1,5);MTX(&mtx,3,3,6);
-    MTX(&mtx,4,2,-2);MTX(&mtx,4,4,11);
-    sp_matrix_lower_solve(&mtx,5,b,x2);
-    for (i = 0; i < 5; ++ i)
-    {
-      printf("%f == %f\n",x2_expected[i],x2[i]);
-      result &= EQL(x2_expected[i],x2[i]);
-    }
-    free_sp_matrix(&mtx);
-  }
   
-  printf("test_solver result: *%s*\n",result ? "pass" : "fail");
+  printf("test_cg_solver result: *%s*\n",result ? "pass" : "fail");
   return result;
 }
 
@@ -4917,6 +4945,49 @@ BOOL test_ilu()
   return result;
 }
 
+BOOL test_pcg_ilu_solver()
+{
+  BOOL result = TRUE;
+  sp_matrix mtx;
+  sp_matrix_skyline_ilu ilu;
+  real v[3] = {0}, x[3] = {0};
+  int max_iter = 20000;
+  real tolerance = 1e-15;
+
+  /* matrix solver test  */
+
+  /* Test 1: */
+  /*
+   * | 1 0 -2 |   | 1 |   |-5 |
+   * | 0 1  0 | x | 2 | = | 2 | 
+   * |-2 0  5 |   | 3 |   |13 |
+   */
+  memset(x,0,3);
+  v[0] = -5;
+  v[1] = 2;
+  v[2] = 13;
+  init_sp_matrix(&mtx,3,3,2,CRS);
+  
+  MTX(&mtx,0,0,1);MTX(&mtx,0,2,-2);
+  MTX(&mtx,1,1,1);
+  MTX(&mtx,2,0,-2);MTX(&mtx,2,2,5);
+
+  sp_matrix_compress(&mtx);
+  sp_matrix_create_ilu(&mtx,&ilu);
+
+  sp_matrix_solve_pcg(&mtx,&ilu,v,v,&max_iter,&tolerance,x);
+
+  result = !( fabs(x[0]-1) > TOLERANCE ||
+              fabs(x[1]-2) > TOLERANCE ||
+              fabs(x[2]-3) > TOLERANCE);
+
+  free_sp_matrix_skyline_ilu(&ilu);
+  free_sp_matrix(&mtx);
+  
+  printf("test_pcg_ilu_solver result: *%s*\n",result ? "pass" : "fail");
+  return result;
+}
+
 BOOL test_cholesky()
 {
   BOOL result = TRUE;
@@ -4982,11 +5053,11 @@ BOOL test_cholesky()
 
 BOOL do_tests()
 {
-  BOOL result = TRUE;
-  result &= test_matrix();
-  result &= test_sp_matrix();
-  result &= test_solver();
-  result &= test_ilu();
-  result &= test_cholesky();
-  return result;
+  return test_matrix() && 
+    test_sp_matrix() &&
+    test_triangle_solver() &&
+    test_cg_solver() &&
+    test_ilu() &&
+    test_pcg_ilu_solver() &&
+    test_cholesky();
 }
