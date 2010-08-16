@@ -1411,29 +1411,28 @@ void clear_sp_matrix(sp_matrix_ptr mtx)
 void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
 {
   int i,n;
-  if (mtx_from && mtx_to)
+  assert(mtx_from && mtx_to);
+  n = mtx_from->storage_type  == CRS ? mtx_from->rows_count :
+    mtx_from->cols_count;
+  mtx_to->rows_count = mtx_from->rows_count;
+  mtx_to->cols_count = mtx_from->cols_count;
+  mtx_to->ordered = mtx_from->ordered;
+  mtx_to->storage_type = mtx_from->storage_type;
+  mtx_to->storage =
+    (indexed_array*)malloc(sizeof(indexed_array)*n);
+  /* copy rows */
+  for (i = 0; i < n; ++ i)
   {
-    n = mtx_from->storage_type  == CRS ? mtx_from->rows_count :
-      mtx_from->cols_count;
-    mtx_to->rows_count = mtx_from->rows_count;
-    mtx_to->cols_count = mtx_from->cols_count;
-    mtx_to->ordered = mtx_from->ordered;
-    mtx_to->storage =
-      (indexed_array*)malloc(sizeof(indexed_array)*n);
-    /* copy rows */
-    for (i = 0; i < n; ++ i)
-    {
-      mtx_to->storage[i].width = mtx_from->storage[i].width;
-      mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
-      mtx_to->storage[i].indexes =
-        (int*)malloc(sizeof(int)*mtx_from->storage[i].width);
-      mtx_to->storage[i].values =
-        (real*)malloc(sizeof(real)*mtx_from->storage[i].width);
-      memcpy(mtx_to->storage[i].indexes, mtx_from->storage[i].indexes,
-             sizeof(int)*mtx_from->storage[i].width);
-      memcpy(mtx_to->storage[i].values, mtx_from->storage[i].values,
-             sizeof(real)*mtx_from->storage[i].width);
-    }
+    mtx_to->storage[i].width = mtx_from->storage[i].width;
+    mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
+    mtx_to->storage[i].indexes =
+      (int*)malloc(sizeof(int)*mtx_from->storage[i].width);
+    mtx_to->storage[i].values =
+      (real*)malloc(sizeof(real)*mtx_from->storage[i].width);
+    memcpy(mtx_to->storage[i].indexes, mtx_from->storage[i].indexes,
+           sizeof(int)*mtx_from->storage[i].width);
+    memcpy(mtx_to->storage[i].values, mtx_from->storage[i].values,
+           sizeof(real)*mtx_from->storage[i].width);
   }
 }
 
@@ -1829,8 +1828,8 @@ void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x)
     tol += r[i]*r[i];
   tol = sqrt(tol);
   /* TODO: move iter, tolerance1 and tolerance2 to the output parameters */
-  /* printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n", */
-  /*        max_iter,tolerance,tol); */
+  printf("iter = %d, tolerance1 = %e, tolerance2 = %e\n",
+         max_iter,tolerance,tol);
   free(r);
 }
 
