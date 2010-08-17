@@ -3,12 +3,13 @@
 CC = gcc
 EXPAT_ROOT = ../../../../expat-2.0.1
 DMALLOC_ROOT = ../../../../dmalloc-5.5.2
-CFLAGS =  -g -O3 -ansi -Wall -pedantic -DUSE_EXPAT -DDMALLOC -DDMALLOC_FUNC_CHECK -DDUMP_DATA
-#-DCURRENT_SHAPE_GRADIENTS
-
+# CFLAGS =  -O3 -ansi -Wall -pedantic -DUSE_EXPAT -DDMALLOC -DDMALLOC_FUNC_CHECK -DCURRENT_SHAPE_GRADIENTS -std=c89
+CFLAGS = -ggdb -pg -ansi -pedantic -Wall -Wextra -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wdeclaration-after-statement -Wmissing-declarations -DUSE_EXPAT -DCURRENT_SHAPE_GRADIENTS
+#-DDUMP_DATA
 
 INCLUDES = -I $(EXPAT_ROOT)/lib -I $(DMALLOC_ROOT)
-LINKFLAGS =  $(EXPAT_ROOT)/.libs/libexpat.a $(DMALLOC_ROOT)/libdmalloc.a
+# LINKFLAGS =  $(EXPAT_ROOT)/.libs/libexpat.a $(DMALLOC_ROOT)/libdmalloc.a -pg
+LINKFLAGS =  $(EXPAT_ROOT)/.libs/libexpat.a -pg
 objects = fea_solver.o
 output = feasolver
 
