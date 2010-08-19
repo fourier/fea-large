@@ -1423,12 +1423,15 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
   /* copy rows */
   for (i = 0; i < n; ++ i)
   {
+    memset(&mtx_to->storage[i],0,sizeof(indexed_array));
     mtx_to->storage[i].width = mtx_from->storage[i].width;
     mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
     mtx_to->storage[i].indexes =
       (int*)malloc(sizeof(int)*mtx_from->storage[i].width);
+    memset(mtx_to->storage[i].indexes,0,sizeof(int)*mtx_from->storage[i].width);
     mtx_to->storage[i].values =
       (real*)malloc(sizeof(real)*mtx_from->storage[i].width);
+    memset(mtx_to->storage[i].values,0,sizeof(real)*mtx_from->storage[i].width);
     memcpy(mtx_to->storage[i].indexes, mtx_from->storage[i].indexes,
            sizeof(int)*mtx_from->storage[i].width);
     memcpy(mtx_to->storage[i].values, mtx_from->storage[i].values,
@@ -1599,9 +1602,9 @@ real* sp_matrix_element(sp_matrix_ptr self,int i, int j)
 {
   int index;
   /* check for matrix and if i,j are proper indicies */
-  if (self && 
-      (i >= 0 && i < self->rows_count ) &&
-      (j >= 0 && j < self->cols_count ))
+  assert(self && 
+         (i >= 0 && i < self->rows_count ) &&
+         (j >= 0 && j < self->cols_count ));
   {
     if (self->storage_type == CRS)
     {
@@ -1726,11 +1729,11 @@ void indexed_array_printf(indexed_array_ptr self)
   if (self)
   {
     printf("indexes = [");
-    for (i = 0; i < self->last_index; ++ i)
+    for (i = 0; i <= self->last_index; ++ i)
       printf("%d,\t",self->indexes[i]);
     printf("%d]\n",self->indexes[i]);
     printf("values  = [");
-    for (i = 0; i < self->last_index; ++ i)
+    for (i = 0; i <= self->last_index; ++ i)
       printf("%f,\t",self->values[i]);
     printf("%f]\n",self->values[i]);
   }
@@ -1739,10 +1742,24 @@ void indexed_array_printf(indexed_array_ptr self)
 
 void sp_matrix_compress(sp_matrix_ptr self)
 {
-  int i;
-  
-  for (i = 0; i < self->rows_count; ++ i)
+  int i,j,n;
+  n = self->storage_type == CRS ? self->rows_count : self->cols_count;
+  printf("self->rows_count = %d",self->rows_count);
+  for (i = 0; i < n; ++ i)
+    indexed_array_printf(&self->storage[i]);
+  printf("self->rows_count = %d",self->rows_count);
+  for (i = 0; i < n; ++ i)
     indexed_array_sort(&self->storage[i],0,self->storage[i].last_index);
+  
+  for (i = 0; i < n; ++ i)
+    for (j = 0; j < self->storage[i].last_index; ++ j)
+      /* assert(self->storage[i].indexes[j] < self->storage[i].indexes[j+1]); */
+      if (self->storage[i].indexes[j] >= self->storage[i].indexes[j+1])
+      {
+        printf("row %d\n",i);
+        indexed_array_printf(&self->storage[i]);
+        assert(FALSE);
+      }
   self->ordered = TRUE;
 }
 
@@ -1858,6 +1875,10 @@ void sp_matrix_solve_cg(sp_matrix_ptr self,
   real* r;              /* residual */
   real* p;              /* search direction */
   real* temp;
+
+  /* check if matrix is reordered */
+  if (!self->ordered)
+    sp_matrix_compress(self);
   
   /* allocate memory for vectors */
   r = malloc(size);
