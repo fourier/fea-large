@@ -1198,7 +1198,7 @@ void solve( fea_task_ptr task,
     solver_create_stresses(solver);
 
     /* create global stiffness matrix K */
-    solver_create_stiffness(solver);
+    /* solver_create_stiffness(solver); */
     sp_matrix_dump(&solver->global_mtx,"mtx_before_conditions.txt");
     /* store global stiffness matrix for modified Newton method */
     copy_sp_matrix(&solver->global_mtx,&stiffness);
