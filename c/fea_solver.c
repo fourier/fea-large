@@ -1198,8 +1198,7 @@ void solve( fea_task_ptr task,
     solver_create_stresses(solver);
 
     /* create global stiffness matrix K */
-    /* solver_create_stiffness(solver); */
-    sp_matrix_dump(&solver->global_mtx,"mtx_before_conditions.txt");
+    solver_create_stiffness(solver);
     /* store global stiffness matrix for modified Newton method */
     copy_sp_matrix(&solver->global_mtx,&stiffness);
     do 
@@ -1429,10 +1428,8 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
     mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
     mtx_to->storage[i].indexes =
       (int*)malloc(sizeof(int)*mtx_from->storage[i].width);
-    memset(mtx_to->storage[i].indexes,0,sizeof(int)*mtx_from->storage[i].width);
     mtx_to->storage[i].values =
       (real*)malloc(sizeof(real)*mtx_from->storage[i].width);
-    memset(mtx_to->storage[i].values,0,sizeof(real)*mtx_from->storage[i].width);
     memcpy(mtx_to->storage[i].indexes, mtx_from->storage[i].indexes,
            sizeof(int)*mtx_from->storage[i].width);
     memcpy(mtx_to->storage[i].values, mtx_from->storage[i].values,
@@ -1651,7 +1648,7 @@ real sp_matrix_element_add(sp_matrix_ptr self,int i, int j, real value)
    * check if bandwidth is not exceed and reallocate memory
    * if necessary
    */
-  if (self->storage[I].last_index == self->storage[J].width - 1)
+  if (self->storage[I].last_index == self->storage[I].width - 1)
   {
     new_width = self->storage[I].width*2;
     indexes = (int*)realloc(self->storage[I].indexes,new_width*sizeof(int));
@@ -1745,10 +1742,6 @@ void sp_matrix_compress(sp_matrix_ptr self)
 {
   int i,j,n;
   n = self->storage_type == CRS ? self->rows_count : self->cols_count;
-  printf("self->rows_count = %d",self->rows_count);
-  for (i = 0; i < n; ++ i)
-    indexed_array_printf(&self->storage[i]);
-  printf("self->rows_count = %d",self->rows_count);
   for (i = 0; i < n; ++ i)
     indexed_array_sort(&self->storage[i],0,self->storage[i].last_index);
   
