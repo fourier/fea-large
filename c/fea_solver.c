@@ -9,9 +9,6 @@
 #ifdef USE_EXPAT
 #include <expat.h>
 #endif
-#ifdef DMALLOC
-#include "dmalloc.h"
-#endif
 
 /*************************************************************/
 /* Type and constants definitions                            */
@@ -1322,9 +1319,6 @@ void application_done(void)
   {
     free_fea_solver(global_solver);
   }
-#ifdef DMALLOC
-  dmalloc_shutdown();
-#endif
   
 }
 
