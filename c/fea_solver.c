@@ -1422,8 +1422,10 @@ void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
     mtx_to->storage[i].last_index = mtx_from->storage[i].last_index;
     mtx_to->storage[i].indexes =
       (int*)malloc(sizeof(int)*mtx_from->storage[i].width);
+    memset(mtx_to->storage[i].indexes,0,sizeof(int)*mtx_from->storage[i].width);
     mtx_to->storage[i].values =
       (real*)malloc(sizeof(real)*mtx_from->storage[i].width);
+    memset(mtx_to->storage[i].values,0,sizeof(real)*mtx_from->storage[i].width);
     memcpy(mtx_to->storage[i].indexes, mtx_from->storage[i].indexes,
            sizeof(int)*mtx_from->storage[i].width);
     memcpy(mtx_to->storage[i].values, mtx_from->storage[i].values,
