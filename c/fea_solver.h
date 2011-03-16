@@ -1,4 +1,7 @@
 /* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+#ifndef __FEA_SOLVER_H__
+#define __FEA_SOLVER_H__
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,55 +12,19 @@
 #ifdef USE_EXPAT
 #include <expat.h>
 #endif
+#include "defines.h"
+#include "sp_matrix.h"
+#include "dense_matrix.h"
 
-/*************************************************************/
-/* Type and constants definitions                            */
-
-/* BOOL type as usual */
-typedef int BOOL;
-#define FALSE 0
-#define TRUE 1
-
-#define MAX_DOF 3
-#define MAX_MATERIAL_PARAMETERS 10
-
-/*
- * SLAE solver constants
- * possibly shall go to the initial data in future
- */
-const int MAX_ITER = 10000;
-const double TOLERANCE = 1e-10;
-
-/* Redefine type of the floating point values */
-#ifdef SINGLE
-typedef float real;
-#else /* not SINGLE */
-typedef double real;
-#endif /* not SINGLE */
-
-/* Equals macro for real values */
-#ifdef SINGLE
-#define EQL(x,y) (fabs((x)-(y))<= (FLT_MIN))
-BOOL eql(float x,float y);
-inline BOOL eql(float x,float y) {return (fabs((x)-(y))<= (FLT_MIN))?TRUE:FALSE;}
-#else
-#define EQL(x,y) (fabs((x)-(y))<= (DBL_MIN))
-BOOL eql(double x,double y);
-BOOL eql(double x,double y) {return (fabs((x)-(y))<= (DBL_MIN))?TRUE:FALSE;}
-#endif
-
-/* Kroneker delta */
-#define DELTA(i,j) ((i)==(j) ? 1 : 0)
-
-/* shortcut for adding of the matrix elements */
-#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
 
 /*************************************************************/
 /* Global variables                                          */
 
 extern int errno;
-struct fea_solver_tag* global_solver;
 typedef struct fea_solver_tag* fea_solver_ptr;
+
+/*************************************************************/
+/* Function pointers declarations                            */
 
 /*
  * A pointer to the the isoparametric shape
@@ -98,42 +65,8 @@ typedef void (*solver_ctensor_t)(fea_solver_ptr self,
                                  real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
 
 
-/*
- * arrays of gauss nodes with coefficients                   
- * layout: [number_of_nodes x 4], with values:               
- * {weight, r,s,t}                                           
- * per gauss node. For 2d cases t = 0
- * Note what divisor 6 for tetraheadras and 2 for triangles
- * shall be already taken into account in weights.
- * See below.
- */
-
-/* Element: TETRAHEDRA10, 4 nodes */
-real gauss_nodes4_tetr10[4][4] = { {(1/4.)/6.,   /* weight */
-                                    0.58541020,  /* a */
-                                    0.13819660,  /* b */
-                                    0.13819660}, /* b */
-                                   {(1/4.)/6.,
-                                    0.13819660,  /* b */
-                                    0.58541020,  /* a */
-                                    0.13819660}, /* b */
-                                   {(1/4.)/6.,
-                                    0.13819660,  /* b */
-                                    0.13819660,  /* b */
-                                    0.58541020}, /* a */
-                                   {(1/4.)/6.,
-                                    0.13819660,  /* b */
-                                    0.13819660,  /* b */
-                                    0.13819660}  /* b */
-};
-/* Element: TETRAHEDRA10, 5 nodes */
-real gauss_nodes5_tetr10[5][4] = { {(-4/5.)/6., 1/4., 1/4., 1/4.},
-                                   {(9/20.)/6., 1/2., 1/6., 1/6.},
-                                   {(9/20.)/6., 1/6., 1/2., 1/6.},
-                                   {(9/20.)/6., 1/6., 1/6., 1/2.},
-                                   {(9/20.)/6., 1/6., 1/6., 1/6.} };
-
-
+/*************************************************************/
+/* Enumerations declarations                                 */
 
 typedef enum task_type_enum {
   /* PLANE_STRESS, PLANE_STRAIN, AXISYMMETRIC,  */
@@ -162,10 +95,9 @@ typedef enum presc_boundary_type_enum {
   PRESCRIBEDXYZ = 7            /* x, y, z prescribed.*/
 } presc_boundary_type;
 
-typedef enum sparse_storage_type_enum {
-  CRS = 0,                      /* Compressed Row Storage */
-  CCS = 1                       /* Compressed Column Storage */
-} sparse_storage_type;
+
+/*************************************************************/
+/* Data structures                                           */
 
 typedef struct fea_material_model_tag {
   model_type model;                         /* model type */
@@ -288,12 +220,6 @@ typedef struct shape_gradients_tag {
 } shape_gradients;
 typedef shape_gradients* shape_gradients_ptr;
 
-/* A storage to keep 2nd rank tensor components  */
-typedef struct tensor_tag {
-  real components[MAX_DOF][MAX_DOF];
-} tensor;
-typedef tensor* tensor_ptr;
-
 /*
  * Load increment step structure.
  * This structure holds all information needed on the current
@@ -312,68 +238,6 @@ typedef struct load_step_tag {
                                  */
 } load_step;
 typedef load_step* load_step_ptr;
-  
-  
-
-/*
- * Sparse matrix row/column storage array
- */
-typedef struct indexed_array_tag {
-  int width;                    /* size of an array */
-  int last_index;               /* last stored index, i.e. if width = 20
-                                 * it will be 9 if only 10 nonzero elements
-                                 * stored */
-  int  *indexes;                /* array of column/row indexes */
-  real *values;                 /* array of values */
-} indexed_array;
-typedef indexed_array* indexed_array_ptr;
-
-/*
- * Sparse matrix row storage 
- * Internal format based on CRS or CCS
- */
-typedef struct sp_matrix_tag {
-  int rows_count;
-  int cols_count;
-  indexed_array* storage;
-  BOOL ordered;                              /* if matrix was finalized */
-  sparse_storage_type storage_type;          /* Storage type */
-} sp_matrix;
-typedef sp_matrix* sp_matrix_ptr;
-
-/*
- * Sparse matrix CSLR(Skyline) format
- * used in sparse iterative solvers
- * Constructed from Sparse Matrix in assumption of the symmetric
- * matrix portrait
- */
-typedef struct sp_matrix_skyline_tag {
-  int rows_count;
-  int cols_count;
-  int nonzeros;                 /* number of nonzero elements in matrix */
-  int tr_nonzeros;  /* number of nonzero elements in
-                     * upper or lower triangles */
-  real *diag;                   /* rows_count elements in matrix diagonal */
-  real *lower_triangle;         /* nonzero elements of the lower triangle */
-  real *upper_triangle;         /* nonzero elements of the upper triangle */
-  int *jptr;                    /* array of column/row indexes of the
-                                 * lower/upper triangles */
-  int *iptr;                    /* array of row/column offsets in jptr
-                                 * for lower or upper triangles */
-} sp_matrix_skyline;
-typedef sp_matrix_skyline* sp_matrix_skyline_ptr;
-
-/*
- * ILU decomposition of the sparse matrix in Skyline (CSLR) format
- * ILU decomposition keeps the symmetric portrait of the sparse matrix
- */
-typedef struct sp_matrix_skyline_ilu_tag {
-  sp_matrix_skyline parent;
-  real *ilu_diag;              /* U matrix diagonal */
-  real *ilu_lowertr;           /* nonzero elements of the lower(L) matrix */
-  real *ilu_uppertr;           /* nonzero elements of the upper(U) matrix */
-} sp_matrix_skyline_ilu;
-typedef sp_matrix_skyline_ilu* sp_matrix_skyline_ilu_ptr;
 
 /*
  * A main application structure which shall contain all
@@ -391,7 +255,7 @@ typedef struct fea_solver_tag {
   solver_ctensor_t ctensor; /* a function pointer to the C elasticity
                              * tensor
                              */
-  export_solution_t export;     /* a pointer to the export function */
+  export_solution_t export_function; /* a pointer to the export function */
 
   fea_task_ptr task_p;               
   fea_solution_params_ptr fea_params_p; 
@@ -437,7 +301,6 @@ typedef struct fea_solver_tag {
   real* global_reactions_vct;   /* reactions in fixed dofs */
   real* global_solution_vct;    /* vector of global solution */
 } fea_solver;
-
 
 
 /*************************************************************/
@@ -552,209 +415,6 @@ void free_load_step(fea_solver_ptr self, load_step_ptr step);
 
 
 /*************************************************************/
-/* Sparse matrix operations                                  */
-
-/* indexed_arrays operations */
-/* Swap i and j elements in the indexed array.
- * Used in indexed_array_sort*/
-void indexed_array_swap(indexed_array_ptr self,int i, int j);
-/* Performs in-place sort of the indexed array */
-void indexed_array_sort(indexed_array_ptr self, int l, int r);
-/* Print contents of the indexed array to the stdout  */
-void indexed_array_printf(indexed_array_ptr self);
-
-/*
- * Initializer for a sparse matrix with specified rows and columns
- * number.
- * This function doesn't allocate the memory for the matrix itself;
- * only for its structures. Matrix mtx shall be already allocated
- * bandwdith - is a start bandwidth of a matrix row
- * type - CRS or CCS sparse matrix storage types
- */
-void init_sp_matrix(sp_matrix_ptr mtx,
-                    int rows,
-                    int cols,
-                    int bandwidth,
-                    sparse_storage_type type);
-/*
- * Destructor for a sparse matrix
- * This function doesn't deallocate memory for the matrix itself,
- * only for its structures.
- */
-sp_matrix_ptr free_sp_matrix(sp_matrix_ptr mtx);
-
-/*
- * Clear the sparse matrix.
- * Set the element values to zero keeping sparsity portrait
- */
-void clear_sp_matrix(sp_matrix_ptr mtx);
-
-/*
- * Copy sparse matrix from mtx_from to mtx_to
- * This function assumes what mtx_to is already cleared by free_sp_matrix
- * or mtx_to is a pointer to uninitialized sp_matrix structure
- */
-void copy_sp_matrix(sp_matrix_ptr mtx_from,
-                    sp_matrix_ptr mtx_to);
-
-/*
- * Converts matrix storage format CRS <=> CCS
- * mtx_to shall be uninitialized sp_matrix structure
- */
-void sp_matrix_convert(sp_matrix_ptr mtx_from,
-                       sp_matrix_ptr mtx_to,
-                       sparse_storage_type type);
-
-/*
- * Creates ILU decomposition of the sparse matrix 
- */
-void sp_matrix_create_ilu(sp_matrix_ptr self,sp_matrix_skyline_ilu_ptr ilu);
-
-/*
- * Construct CSLR sparse matrix based on sp_matrix format
- * mtx - is the (reordered) sparse matrix to take data from
- * Acts as a copy-constructor
- */
-void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,
-                            sp_matrix_ptr mtx);
-/*
- * Destructor for a sparse matrix in CSLR format
- * This function doesn't deallocate memory for the matrix itself,
- * only for its structures.
- */
-void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
-
-/* getters/setters for a sparse matrix */
-
-/* returns a pointer to the specific element
- * zero pointer if not found */
-real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
-/* adds an element value to the matrix node (i,j) and return (i,j) */
-real sp_matrix_element_add(sp_matrix_ptr self,
-                           int i, int j, real value);
-
-/* rearrange columns of a matrix to prepare for solving SLAE */
-void sp_matrix_compress(sp_matrix_ptr self);
-
-/*
- * Implements BLAS level 2 function SAXPY: y = A*x+b
- * All vectors shall be already allocated
- void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
-*/
-
-/* Matrix-vector multiplication
- * y = A*x*/
-void sp_matrix_mv(sp_matrix_ptr self,real* x, real* y);
-
-/*
- * Solves SLAE L*x = b
- * by given L sparse matrix 
- * n - is the size of the x vector, and therefore
- * the matrix L will be used up to nth row & column.
- */
-void sp_matrix_lower_solve(sp_matrix_ptr self,
-                           int n,
-                           real* b,
-                           real* x);
-
-
-/*
- * Solve SLAE for a matrix self with right-part b
- * Store results to the vector x. It shall be already allocated
- */
-void sp_matrix_solve(sp_matrix_ptr self,real* b,real* x);
-/*
- * Conjugate Grade solver
- * self - matrix
- * b - right-part vector
- * x0 - first approximation of the solution
- * max_iter - pointer to maximum number of iterations, MAX_ITER if zero;
- * will contain a number of iterations passed
- * tolerance - pointer to desired tolerance value, TOLERANCE if zero;
- * will contain norm of the residual at the end of iteration
- * x - output vector
- */
-void sp_matrix_solve_cg(sp_matrix_ptr self,
-                        real* b,
-                        real* x0,
-                        int* max_iter,
-                        real* tolerance,
-                        real* x);
-
-/*
- * Preconditioned Conjugate Grade solver
- * Preconditioner in form of the ILU decomposition
- * self - matrix
- * b - right-part vector
- * x0 - first approximation of the solution
- * max_iter - pointer to maximum number of iterations, MAX_ITER if zero;
- * will contain a number of iterations passed
- * tolerance - pointer to desired tolerance value, TOLERANCE if zero;
- * will contain norm of the residual at the end of iteration
- * x - output vector
- */
-void sp_matrix_solve_pcg_ilu(sp_matrix_ptr self,
-                             sp_matrix_skyline_ilu_ptr ilu,
-                             real* b,
-                             real* x0,
-                             int* max_iter,
-                             real* tolerance,
-                             real* x);
-
-
-/*
- * Create ILU decomposition of the sparse matrix in skyline format
- * lu_diag - ILU decomposition diagonal
- * lu_lowertr - lower triangle of the ILU decomposition
- * lu_uppertr - upper triangle of the ILU decomposition
- */
-void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
-                                     sp_matrix_skyline_ptr parent);
-
-/* Free the sparse matrix skyline & ilu decomposition structure */
-void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
-
-/*
- * by given L,U - ILU decomposition of the matrix A
- * calculates L*x = y
- */
-void sp_matrix_skyline_ilu_lower_mv(sp_matrix_skyline_ilu_ptr self,
-                                    real* x,
-                                    real* y);
-/*
- * by given L,U - ILU decomposition of the matrix A
- * calculates U*x = y
- */
-void sp_matrix_skyline_ilu_upper_mv(sp_matrix_skyline_ilu_ptr self,
-                                    real* x,
-                                    real* y);
-
-/*
- * by given L,U - ILU decomposition of the matrix A
- * Solves SLAE L*x = b
- * Warning! Side-Effect: modifies b
- */
-void sp_matrix_skyline_ilu_lower_solve(sp_matrix_skyline_ilu_ptr self,
-                                       real* b,
-                                       real* x);
-
-/*
- * by given L,U - ILU decomposition of the matrix A
- * Solves SLAE U*x = b
- * Warning! Side-Effect: modifies b 
- */
-void sp_matrix_skyline_ilu_upper_solve(sp_matrix_skyline_ilu_ptr self,
-                                       real* b,
-                                       real* x);
-
-/* Print contens of the matrix in index form to the stdout */
-void sp_matrix_printf(sp_matrix_ptr self);
-#ifdef DUMP_DATA
-void sp_matrix_dump(sp_matrix_ptr self, char* filename);
-void sp_matrix_skyline_dump(sp_matrix_skyline_ptr self, char* filename);
-#endif 
-
-/*************************************************************/
 /* Functions describing concrete element types               */
 
 /* function for calculation value of shape function for 10-noded
@@ -846,16 +506,6 @@ void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename);
 /* General functions                                         */
 
 /*
- * A function which will be called in case of error to
- * clear all memory occupied by internal structures.
- * Will clear global variable global_solver in a proper way
- * by calling free_fea_solver.
- * Also shall clear other allocated resources
- */
-void application_done(void);
-
-
-/*
  * Parse command line parameters and return input file name
  * into the filename variable
  */
@@ -866,36 +516,6 @@ int parse_cmdargs(int argc, char **argv,char **filename);
  */
 int do_main(char* filename);
 
-/*
- * Vector norm
- */
-real vector_norm(real* vector, int size);
-/* Scalar multiplication of 2 vectors of the same size */
-real cdot(real* vector1, real* vector2, int size);
-
-
-/*
- * Test function to prove what all matrix manipulations are correct
- * returns FALSE if fail
- */
-BOOL do_tests();
-/* test dense matrix operations */
-BOOL test_matrix();
-/* test sparse matrix operations */
-BOOL test_sp_matrix();
-/* test set of triangle solvers */
-BOOL test_triangle_solver();
-/* test matrix/vector Conjugate Gradient SLAE solver */
-BOOL test_cg_solver();
-/*
- * test matrix/vector Preconditioned Conjugate Gradient SLAE solver
- * where preconditioner M = ILU decomposition
- */
-BOOL test_pcg_ilu_solver();
-/* test ILU decomposition */
-BOOL test_ilu();
-/* test Cholesky decomposition */
-BOOL test_cholesky();
 
 /*
  * Solver function which shall be called
@@ -1056,30 +676,7 @@ gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
 void solver_free_gauss_node(fea_solver_ptr self,
                             gauss_node_ptr node);
 
-/*************************************************************/
-/* Functions for operating on matrix 3x3                     */
 
-/* Calculates the determinant of the matrix 3x3 */
-real det3x3(real (*matrix3x3)[3]);
 
-/*
- * Calculates in-place inverse of the matrix 3x3
- * Returns FALSE if the matrix is ill-formed
- * det shall store a determinant of the matrix
- */
-BOOL inv3x3(real (*matrix3x3)[3], real* det);
 
-/*
- * Performs matrix multiplication A x B writing result to R
- */
-void matrix_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
-
-/*
- * Performs matrix multiplication A' x B writing result to R
- */
-void matrix_transpose_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
-
-/*
- * Performs matrix multiplication A x B' writing result to R
- */
-void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3]);
+#endif /* __FEA_SOLVER_H__ */

@@ -33,7 +33,7 @@ typedef indexed_array* indexed_array_ptr;
 typedef struct sp_matrix_tag {
   int rows_count;
   int cols_count;
-  indexed_array* storage;
+  indexed_array_ptr storage;
   BOOL ordered;                              /* if matrix was finalized */
   sparse_storage_type storage_type;          /* Storage type */
 } sp_matrix;
@@ -49,8 +49,8 @@ typedef struct sp_matrix_skyline_tag {
   int rows_count;
   int cols_count;
   int nonzeros;                 /* number of nonzero elements in matrix */
-  int tr_nonzeros;  /* number of nonzero elements in
-                     * upper or lower triangles */
+  int tr_nonzeros;              /* number of nonzero elements in
+                                 * upper or lower triangles */
   real *diag;                   /* rows_count elements in matrix diagonal */
   real *lower_triangle;         /* nonzero elements of the lower triangle */
   real *upper_triangle;         /* nonzero elements of the upper triangle */
@@ -158,11 +158,6 @@ real sp_matrix_element_add(sp_matrix_ptr self,
 /* rearrange columns of a matrix to prepare for solving SLAE */
 void sp_matrix_compress(sp_matrix_ptr self);
 
-/*
- * Implements BLAS level 2 function SAXPY: y = A*x+b
- * All vectors shall be already allocated
- void sp_matrix_saxpy((sp_matrix_ptr self,real* b,real* x, real* y);
-*/
 
 /* Matrix-vector multiplication
  * y = A*x*/
