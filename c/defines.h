@@ -2,8 +2,17 @@
 #ifndef __DEFINES_H__
 #define __DEFINES_H__
 
+/*#include <float.h>*/
+
 /*************************************************************/
 /* Type and constants definitions                            */
+
+#ifndef DBL_MIN
+#define DBL_MIN 2.2250738585072014e-308
+#endif
+#ifndef FLT_MIN
+#define FLT_MIN 1.17549435e-38F
+#endif
 
 /* BOOL type as usual */
 typedef int BOOL;

@@ -7,7 +7,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-#include <float.h>
 #include <assert.h>
 #ifdef USE_EXPAT
 #include <expat.h>

@@ -4,7 +4,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-#include <float.h>
 #include <assert.h>
 #include "fea_solver.h"
 #include "sp_matrix.h"

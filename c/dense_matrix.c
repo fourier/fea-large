@@ -1,7 +1,5 @@
 /* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 #include <math.h>
-#include <float.h>
-
 #include "defines.h"
 #include "dense_matrix.h"
 
