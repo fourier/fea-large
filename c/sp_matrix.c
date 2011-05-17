@@ -18,7 +18,7 @@ const int MAX_ITER = 10000;
 const real TOLERANCE = 1e-10;
 
 
-void init_sp_matrix(sp_matrix_ptr mtx,
+void sp_matrix_init(sp_matrix_ptr mtx,
                     int rows,
                     int cols,
                     int bandwidth,
@@ -47,7 +47,7 @@ void init_sp_matrix(sp_matrix_ptr mtx,
 }
 
 
-sp_matrix_ptr free_sp_matrix(sp_matrix_ptr mtx)
+sp_matrix_ptr sp_matrix_free(sp_matrix_ptr mtx)
 {
   int i,n;
   if (mtx)
@@ -66,7 +66,7 @@ sp_matrix_ptr free_sp_matrix(sp_matrix_ptr mtx)
   return (sp_matrix_ptr)0;
 }
 
-void clear_sp_matrix(sp_matrix_ptr mtx)
+void sp_matrix_clear(sp_matrix_ptr mtx)
 {
   int i,n;
   if (mtx)
@@ -79,7 +79,7 @@ void clear_sp_matrix(sp_matrix_ptr mtx)
   }
 }
 
-void copy_sp_matrix(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
+void sp_matrix_copy(sp_matrix_ptr mtx_from, sp_matrix_ptr mtx_to)
 {
   int i,n;
   assert(mtx_from && mtx_to);
@@ -117,7 +117,7 @@ void sp_matrix_convert(sp_matrix_ptr mtx_from,
   int i,j;
   if (type == mtx_from->storage_type)
     return;
-  init_sp_matrix(mtx_to,
+  sp_matrix_init(mtx_to,
                  mtx_from->rows_count,
                  mtx_from->cols_count,
                  mtx_from->storage[0].width,
@@ -151,19 +151,19 @@ void sp_matrix_create_ilu(sp_matrix_ptr self,sp_matrix_skyline_ilu_ptr ilu)
   if (!self->ordered)
     sp_matrix_compress(self);
   /* initialize skyline matrix for ILU decomposition */
-  init_sp_matrix_skyline(&A,self);
+  sp_matrix_skyline_init(&A,self);
   /*
    * create ILU decomposition of the sparse matrix in skyline format
    * taking ownership of the skyline A matrix
    */
-  init_copy_sp_matrix_skyline_ilu(ilu,&A);
+  sp_matrix_skyline_ilu_copy_init(ilu,&A);
   /*
    * since init_copy_sp_matrix_skyline_ilu takes the ownership
    * of the A matrix it is not needed to free A matrix
    */
 }
 
-void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
+void sp_matrix_skyline_init(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
 {
   /*
    * Construct CSLR matrix from the sp_matrix
@@ -252,7 +252,7 @@ void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
   self->iptr[i] = self->tr_nonzeros;
 }
 
-void free_sp_matrix_skyline(sp_matrix_skyline_ptr self)
+void sp_matrix_skyline_free(sp_matrix_skyline_ptr self)
 {
   if (self)
   {
@@ -759,7 +759,7 @@ void sp_matrix_solve_pcg_ilu(sp_matrix_ptr self,
   free(temp);
 }
 
-void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
+void sp_matrix_skyline_ilu_copy_init(sp_matrix_skyline_ilu_ptr self,
                                      sp_matrix_skyline_ptr parent)
 {
   int i,j,k,l,q;
@@ -837,12 +837,12 @@ void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
   }
 }
 
-void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self)
+void sp_matrix_skyline_ilu_free(sp_matrix_skyline_ilu_ptr self)
 {
   free(self->ilu_diag);
   free(self->ilu_lowertr);
   free(self->ilu_uppertr);
-  free_sp_matrix_skyline(&self->parent);
+  sp_matrix_skyline_free(&self->parent);
 }
 
 

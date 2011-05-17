@@ -122,7 +122,7 @@ void solve( fea_task_ptr task,
   dump_input_data("input.txt",task,fea_params,nodes,elements,presc_boundary);
 #endif
   /* Prepare solver instance */
-  solver = new_fea_solver(task,
+  solver = fea_solver_alloc(task,
                           fea_params,
                           nodes,
                           elements,
@@ -155,7 +155,7 @@ void solve( fea_task_ptr task,
     /* create global stiffness matrix K */
     solver_create_stiffness(solver);
     /* store global stiffness matrix for modified Newton method */
-    copy_sp_matrix(&solver->global_mtx,&stiffness);
+    sp_matrix_copy(&solver->global_mtx,&stiffness);
     do 
     {
       it ++;
@@ -170,8 +170,8 @@ void solve( fea_task_ptr task,
          * use stored  stiffness matrix in
          * modified Newton method
          */
-        free_sp_matrix(&solver->global_mtx);
-        copy_sp_matrix(&stiffness,&solver->global_mtx);
+        sp_matrix_free(&solver->global_mtx);
+        sp_matrix_copy(&stiffness,&solver->global_mtx);
       }
       else                        
       {
@@ -201,19 +201,19 @@ void solve( fea_task_ptr task,
 
     } while ( fabs(tolerance) > solver->task_p->desired_tolerance);
     /* store current load step */
-    init_load_step(solver,
-                   &solver->load_steps_p[solver->current_load_step],
-                   solver->current_load_step);
+    solver_load_step_init(solver,
+                          &solver->load_steps_p[solver->current_load_step],
+                          solver->current_load_step);
 
     /* clear stored stiffness matrix */
-    free_sp_matrix(&stiffness);
+    sp_matrix_free(&stiffness);
     printf("Load increment %d finished\n",solver->current_load_step);
   }
   /* export solution */
   printf("Exporting data...\n");
   solver->export_function(solver,"deformed.msh");
   
-  free_fea_solver(solver);
+  fea_solver_free(solver);
 }
 
 
@@ -280,7 +280,7 @@ real solver_node_dof(fea_solver_ptr self,
 }
 
 
-fea_solver* new_fea_solver(fea_task_ptr task,
+fea_solver* fea_solver_alloc(fea_task_ptr task,
                            fea_solution_params_ptr fea_params,
                            nodes_array_ptr nodes,
                            elements_array_ptr elements,
@@ -293,7 +293,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
   solver->task_p = task;
   solver->fea_params_p = fea_params;
   solver->nodes0_p = nodes;
-  solver->nodes_p = new_copy_nodes_array(nodes);
+  solver->nodes_p = nodes_array_copy_alloc(nodes);
   solver->elements_p = elements;
   solver->presc_boundary_p = prs_boundary;
 
@@ -341,7 +341,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
   /* approximate bandwidth of a global matrix
    * usually sqrt(msize)*2*/
   bandwidth = (int)sqrt(msize)*2;
-  init_sp_matrix(&solver->global_mtx,msize,msize,bandwidth,CRS);
+  sp_matrix_init(&solver->global_mtx,msize,msize,bandwidth,CRS);
   /* allocate memory for global forces and solution vectors */
   solver->global_forces_vct = (real*)malloc(sizeof(real)*msize);
   solver->global_solution_vct = (real*)malloc(sizeof(real)*msize);
@@ -351,7 +351,7 @@ fea_solver* new_fea_solver(fea_task_ptr task,
 }
 
 
-void free_fea_solver(fea_solver_ptr solver)
+void fea_solver_free(fea_solver_ptr solver)
 {
   /* deallocate resources */
   /* free shape gradients, graddefs and stresses */
@@ -363,9 +363,9 @@ void free_fea_solver(fea_solver_ptr solver)
     for (j = 0; j < gauss_count; ++ j)
     {
       if (solver->shape_gradients0[i][j])
-        solver_free_shape_gradients(solver,solver->shape_gradients0[i][j]);
+        solver_shape_gradients_free(solver,solver->shape_gradients0[i][j]);
       if (solver->shape_gradients[i][j])
-        solver_free_shape_gradients(solver,solver->shape_gradients[i][j]);
+        solver_shape_gradients_free(solver,solver->shape_gradients[i][j]);
     }
     free(solver->shape_gradients0[i]);
     free(solver->shape_gradients[i]);
@@ -378,23 +378,23 @@ void free_fea_solver(fea_solver_ptr solver)
   free(solver->graddefs);
   /* free stored load steps */
   for ( i = 0; i < solver->current_load_step; ++ i)
-    free_load_step(solver, &solver->load_steps_p[i]);
+    solver_load_step_free(solver, &solver->load_steps_p[i]);
   free(solver->load_steps_p);
   /* deallocate all other resources */
   solver_free_element_database(solver);
-  free_fea_task(solver->task_p);
-  free_fea_solution_params(solver->fea_params_p);
-  free_nodes_array(solver->nodes0_p);
-  free_nodes_array(solver->nodes_p);
-  free_elements_array(solver->elements_p);
-  free_presc_boundary_array(solver->presc_boundary_p);
-  free_sp_matrix(&solver->global_mtx);
+  fea_task_free(solver->task_p);
+  fea_solution_params_free(solver->fea_params_p);
+  nodes_array_free(solver->nodes0_p);
+  nodes_array_free(solver->nodes_p);
+  elements_array_free(solver->elements_p);
+  presc_boundary_array_free(solver->presc_boundary_p);
+  sp_matrix_free(&solver->global_mtx);
   free(solver->global_forces_vct);
   free(solver->global_solution_vct);
   free(solver);
 }
 
-gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
+gauss_node_ptr solver_gauss_node_alloc(fea_solver_ptr self,
                                      int gauss_node_index)
 {
   gauss_node_ptr node = (gauss_node_ptr)0;
@@ -429,7 +429,7 @@ gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
 }
 
 /* Deallocate gauss node */
-void solver_free_gauss_node(fea_solver_ptr self,
+void solver_gauss_node_free(fea_solver_ptr self,
                             gauss_node_ptr node)
 {
   int i;
@@ -458,7 +458,7 @@ void solver_create_element_database(fea_solver_ptr self)
       (gauss_node_ptr*)malloc(sizeof(gauss_node*)*gauss_count);
     for (gauss = 0; gauss < gauss_count; ++ gauss)
       self->elements_db.gauss_nodes[gauss] =
-        solver_new_gauss_node(self,gauss);
+        solver_gauss_node_alloc(self,gauss);
     
   }
 }
@@ -469,7 +469,7 @@ void solver_free_element_database(fea_solver_ptr solver)
   if (solver->elements_db.gauss_nodes)
   {
     for (gauss = 0; gauss < solver->fea_params_p->gauss_nodes_count; ++gauss)
-      solver_free_gauss_node(solver,solver->elements_db.gauss_nodes[gauss]);
+      solver_gauss_node_free(solver,solver->elements_db.gauss_nodes[gauss]);
     
     free(solver->elements_db.gauss_nodes);
   }
@@ -496,7 +496,7 @@ void solver_create_element_params(fea_solver_ptr solver)
   
 }
 
-void init_load_step(fea_solver_ptr self,
+void solver_load_step_init(fea_solver_ptr self,
                     load_step_ptr step,
                     int step_number)
 {
@@ -506,7 +506,7 @@ void init_load_step(fea_solver_ptr self,
   if (step)
   {
     step->step_number = step_number;
-    step->nodes_p = new_copy_nodes_array(self->nodes_p);
+    step->nodes_p = nodes_array_copy_alloc(self->nodes_p);
     step->stresses = (tensor**)malloc(sizeof(tensor*)*elnum);
     step->graddefs = (tensor**)malloc(sizeof(tensor*)*elnum);
 
@@ -529,7 +529,7 @@ void init_load_step(fea_solver_ptr self,
   }
 }
 
-void free_load_step(fea_solver_ptr self, load_step_ptr step)
+void solver_load_step_free(fea_solver_ptr self, load_step_ptr step)
 {
   int elnum = self->elements_p->elements_count;
   int i;
@@ -542,12 +542,12 @@ void free_load_step(fea_solver_ptr self, load_step_ptr step)
     }
     free(step->stresses);
     free(step->graddefs);
-    free_nodes_array(step->nodes_p);
+    nodes_array_free(step->nodes_p);
   }
 }
 
 
-shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
+shape_gradients_ptr solver_shape_gradients_alloc(fea_solver_ptr self,
                                                nodes_array_ptr nodes,
                                                int element,
                                                int gauss)
@@ -616,7 +616,7 @@ shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
 }
 
 /* Destructor for the shape gradients array */
-void solver_free_shape_gradients(fea_solver_ptr self,
+void solver_shape_gradients_free(fea_solver_ptr self,
                                  shape_gradients_ptr grads)
 {
   int i;
@@ -694,7 +694,7 @@ void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
          ++ gauss)
     {
       /* create shape gradients either in initial or current configuration */
-      grads = solver_new_shape_gradients(self,
+      grads = solver_shape_gradients_alloc(self,
                                          current ?
                                          self->nodes_p : self->nodes0_p,
                                          element,gauss);
@@ -704,14 +704,14 @@ void solver_create_shape_gradients(fea_solver_ptr self,BOOL current)
         if (current)            /* current configuration */
         {
           if ( self->shape_gradients[element][gauss] )
-            solver_free_shape_gradients(self,
+            solver_shape_gradients_free(self,
                                         self->shape_gradients[element][gauss]);
           self->shape_gradients[element][gauss] = grads;
         }
         else                    /* initial configuration */
         {
           if ( self->shape_gradients0[element][gauss] )
-            solver_free_shape_gradients(self,
+            solver_shape_gradients_free(self,
                                         self->shape_gradients0[element][gauss]);
           self->shape_gradients0[element][gauss] = grads;
         }
@@ -767,7 +767,7 @@ void solver_create_stiffness(fea_solver_ptr self)
 {
   int el = 0;
   /* clear global stiffness matrix before constructing a new one */
-  clear_sp_matrix(&self->global_mtx);
+  sp_matrix_clear(&self->global_mtx);
   
   for (; el < self->elements_p->elements_count; ++ el)
   {
@@ -1556,7 +1556,7 @@ void solver_create_element_params_tetrahedra10(fea_solver* solver)
 }
 
 
-fea_task_ptr new_fea_task()
+fea_task_ptr fea_task_alloc()
 {
   /* allocate memory */
   fea_task_ptr task = (fea_task_ptr)malloc(sizeof(fea_task));
@@ -1576,13 +1576,13 @@ fea_task_ptr new_fea_task()
   return task;
 }
 
-void free_fea_task(fea_task_ptr task)
+void fea_task_free(fea_task_ptr task)
 {
   free(task);
 }
 
 /* Initializes fea solution params with default values */
-fea_solution_params_ptr new_fea_solution_params()
+fea_solution_params_ptr fea_solution_params_alloc()
 {
   /* allocate memory */
   fea_solution_params_ptr fea_params = (fea_solution_params_ptr)
@@ -1594,13 +1594,13 @@ fea_solution_params_ptr new_fea_solution_params()
 }
 
 /* clear fea solution params */
-void free_fea_solution_params(fea_solution_params_ptr params)
+void fea_solution_params_free(fea_solution_params_ptr params)
 {
   free(params);
 }
 
 /* Initialize nodes array but not initialize particular arrays  */
-nodes_array_ptr new_nodes_array()
+nodes_array_ptr nodes_array_alloc()
 {
   /* allocate memory */
   nodes_array_ptr nodes = (nodes_array_ptr)malloc(sizeof(nodes_array));
@@ -1610,7 +1610,7 @@ nodes_array_ptr new_nodes_array()
   return nodes;
 }
 
-nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes)
+nodes_array_ptr nodes_array_copy_alloc(nodes_array_ptr nodes)
 {
   int i;
   /* allocate memory */
@@ -1632,7 +1632,7 @@ nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes)
 }
 
 /* carefully deallocate nodes array */
-void free_nodes_array(nodes_array_ptr nodes)
+void nodes_array_free(nodes_array_ptr nodes)
 {
   int counter = 0;
   if (nodes)
@@ -1649,7 +1649,7 @@ void free_nodes_array(nodes_array_ptr nodes)
 
 
 /* Initialize elements array but not initialize particular elements */
-elements_array_ptr new_elements_array()
+elements_array_ptr elements_array_alloc()
 {
   /* allocate memory */
   elements_array_ptr elements = (elements_array_ptr)
@@ -1660,7 +1660,7 @@ elements_array_ptr new_elements_array()
   return elements;
 }
 
-void free_elements_array(elements_array_ptr elements)
+void elements_array_free(elements_array_ptr elements)
 {
   if(elements)
   {
@@ -1676,7 +1676,7 @@ void free_elements_array(elements_array_ptr elements)
 }
 
 /* Initialize boundary nodes array but not initialize particular nodes */
-presc_boundary_array_ptr new_presc_boundary_array()
+presc_boundary_array_ptr presc_boundary_array_alloc()
 {
   /* allocate memory */
   presc_boundary_array_ptr presc_boundary =
@@ -1687,7 +1687,7 @@ presc_boundary_array_ptr new_presc_boundary_array()
   return presc_boundary;
 }
 
-void free_presc_boundary_array(presc_boundary_array_ptr presc)
+void presc_boundary_array_free(presc_boundary_array_ptr presc)
 {
   if (presc)
   {

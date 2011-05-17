@@ -72,7 +72,7 @@ BOOL test_sp_matrix()
    * 2  2  0  0  3  0  8
    */
 
-  init_sp_matrix(&mtx,7,7,5,CRS);
+  sp_matrix_init(&mtx,7,7,5,CRS);
 
   MTX(&mtx,0,0,9);MTX(&mtx,0,3,3);MTX(&mtx,0,4,1);MTX(&mtx,0,6,1);
   MTX(&mtx,1,1,11);MTX(&mtx,1,2,2);MTX(&mtx,1,3,1);MTX(&mtx,1,6,2);
@@ -107,11 +107,11 @@ BOOL test_sp_matrix()
     {
       result &= EQL(x[i],expected[i]);
     }
-    free_sp_matrix(&mtx2);
-    free_sp_matrix(&mtx3);
+    sp_matrix_free(&mtx2);
+    sp_matrix_free(&mtx3);
   }
   
-  free_sp_matrix(&mtx);
+  sp_matrix_free(&mtx);
   printf("test_sp_matrix result: *%s*\n",result ? "pass" : "fail");
   return result;
 }
@@ -132,7 +132,7 @@ BOOL test_triangle_solver()
    * | 0  5  0  6  0 |   | 5 |   | 40|
    * | 0  0 -2  0 11 |   |-7 |   |-71|
    */
-  init_sp_matrix(&mtx,5,5,3,CRS);
+  sp_matrix_init(&mtx,5,5,3,CRS);
   MTX(&mtx,0,0,-1);
   MTX(&mtx,1,0,1);MTX(&mtx,1,1,2);
   MTX(&mtx,2,0,-1);MTX(&mtx,2,2,3);
@@ -149,10 +149,10 @@ BOOL test_triangle_solver()
     sp_matrix_lower_solve(&mtx,5,b,x);
     for (i = 0; i < 5; ++ i)
       result &= EQL(x_expected[i],x[i]);
-    free_sp_matrix(&mtx2);
+    sp_matrix_free(&mtx2);
   }
   
-  free_sp_matrix(&mtx);
+  sp_matrix_free(&mtx);
   
   printf("test_triangle_solver result: *%s*\n",result ? "pass" : "fail");
   return result;
@@ -178,7 +178,7 @@ BOOL test_cg_solver()
   v[0] = -5;
   v[1] = 2;
   v[2] = 13;
-  init_sp_matrix(&mtx,3,3,2,CRS);
+  sp_matrix_init(&mtx,3,3,2,CRS);
   
   MTX(&mtx,0,0,1);MTX(&mtx,0,2,-2);
   MTX(&mtx,1,1,1);
@@ -190,7 +190,7 @@ BOOL test_cg_solver()
   result = !( fabs(x[0]-1) > TOLERANCE ||
               fabs(x[1]-2) > TOLERANCE ||
               fabs(x[2]-3) > TOLERANCE);
-  free_sp_matrix(&mtx);
+  sp_matrix_free(&mtx);
   
   printf("test_cg_solver result: *%s*\n",result ? "pass" : "fail");
   return result;
@@ -251,7 +251,7 @@ BOOL test_ilu()
    * 3) LU - solvers for ILU decomposition
    */
 
-  init_sp_matrix(&mtx,7,7,5,CRS);
+  sp_matrix_init(&mtx,7,7,5,CRS);
 
   MTX(&mtx,0,0,9);MTX(&mtx,0,3,3);MTX(&mtx,0,4,1);MTX(&mtx,0,6,1);
   MTX(&mtx,1,1,11);MTX(&mtx,1,2,2);MTX(&mtx,1,3,1);MTX(&mtx,1,6,2);
@@ -263,8 +263,8 @@ BOOL test_ilu()
   MTX(&mtx,6,0,2);MTX(&mtx,6,1,2);MTX(&mtx,6,4,3);MTX(&mtx,6,6,8);
 
   sp_matrix_compress(&mtx);
-  init_sp_matrix_skyline(&m,&mtx);
-  init_copy_sp_matrix_skyline_ilu(&ILU,&m);
+  sp_matrix_skyline_init(&m,&mtx);
+  sp_matrix_skyline_ilu_copy_init(&ILU,&m);
 
   for (i = 0; i <  m.rows_count; ++ i)
     result &= fabs(ILU.ilu_diag[i] - lu_diag_expected[i]) < 1e-5;
@@ -312,8 +312,8 @@ BOOL test_ilu()
     for ( i = 0; i < m.rows_count; ++ i)
       result &= EQL(x[i],x_exact[i]);
 
-    free_sp_matrix(&mtx);
-    free_sp_matrix_skyline_ilu(&ILU);
+    sp_matrix_free(&mtx);
+    sp_matrix_skyline_ilu_free(&ILU);
   }
   
   printf("test_ilu result: *%s*\n",result ? "pass" : "fail");
@@ -341,7 +341,7 @@ BOOL test_pcg_ilu_solver()
   v[0] = -5;
   v[1] = 2;
   v[2] = 13;
-  init_sp_matrix(&mtx,3,3,2,CRS);
+  sp_matrix_init(&mtx,3,3,2,CRS);
   
   MTX(&mtx,0,0,1);MTX(&mtx,0,2,-2);
   MTX(&mtx,1,1,1);
@@ -356,8 +356,8 @@ BOOL test_pcg_ilu_solver()
               fabs(x[1]-2) > TOLERANCE ||
               fabs(x[2]-3) > TOLERANCE);
 
-  free_sp_matrix_skyline_ilu(&ilu);
-  free_sp_matrix(&mtx);
+  sp_matrix_skyline_ilu_free(&ilu);
+  sp_matrix_free(&mtx);
   
   printf("test_pcg_ilu_solver result: *%s*\n",result ? "pass" : "fail");
   return result;
@@ -388,7 +388,7 @@ BOOL test_cholesky()
      {0., 0., 0., 0., 0., 0., 6.6388}};
 
   /* fill initial matrix */
-  init_sp_matrix(&mtx,7,7,5,CRS);
+  sp_matrix_init(&mtx,7,7,5,CRS);
 
 /* {90, 6, 4, 46, 29, 0, 26}, */
   MTX(&mtx,0,0,90);MTX(&mtx,0,1,6);MTX(&mtx,0,2,4);MTX(&mtx,0,3,46);
@@ -414,12 +414,12 @@ BOOL test_cholesky()
   /* prepare initial matrix for conversion to Skyline format */
   sp_matrix_compress(&mtx);
   /* initialize skyline format from given CRS format */
-  init_sp_matrix_skyline(&m,&mtx);
+  sp_matrix_skyline_init(&m,&mtx);
 
 
   /* clear matrix */
-  free_sp_matrix(&mtx);
-  free_sp_matrix_skyline(&m);
+  sp_matrix_free(&mtx);
+  sp_matrix_skyline_free(&m);
   
   printf("test_cholesky result: *%s*\n",result ? "pass" : "fail");
   return result;

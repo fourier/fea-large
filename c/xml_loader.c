@@ -187,11 +187,11 @@ BOOL expat_data_load(char *filename,
   fclose(xml_document_file);
 
   /* allocate parse data */
-  parse.task = new_fea_task();
-  parse.fea_params = new_fea_solution_params();
-  parse.nodes = new_nodes_array();
-  parse.elements = new_elements_array();
-  parse.presc_boundary = new_presc_boundary_array();
+  parse.task = fea_task_alloc();
+  parse.fea_params = fea_solution_params_alloc();
+  parse.nodes = nodes_array_alloc();
+  parse.elements = elements_array_alloc();
+  parse.presc_boundary = presc_boundary_array_alloc();
   parse.current_size = 0;
   parse.current_text = (char*)0;
   /* set user data */

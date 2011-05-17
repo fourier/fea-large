@@ -93,7 +93,7 @@ void indexed_array_printf(indexed_array_ptr self);
  * bandwdith - is a start bandwidth of a matrix row
  * type - CRS or CCS sparse matrix storage types
  */
-void init_sp_matrix(sp_matrix_ptr mtx,
+void sp_matrix_init(sp_matrix_ptr mtx,
                     int rows,
                     int cols,
                     int bandwidth,
@@ -103,20 +103,20 @@ void init_sp_matrix(sp_matrix_ptr mtx,
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-sp_matrix_ptr free_sp_matrix(sp_matrix_ptr mtx);
+sp_matrix_ptr sp_matrix_free(sp_matrix_ptr mtx);
 
 /*
  * Clear the sparse matrix.
  * Set the element values to zero keeping sparsity portrait
  */
-void clear_sp_matrix(sp_matrix_ptr mtx);
+void sp_matrix_clear(sp_matrix_ptr mtx);
 
 /*
  * Copy sparse matrix from mtx_from to mtx_to
  * This function assumes what mtx_to is already cleared by free_sp_matrix
  * or mtx_to is a pointer to uninitialized sp_matrix structure
  */
-void copy_sp_matrix(sp_matrix_ptr mtx_from,
+void sp_matrix_copy(sp_matrix_ptr mtx_from,
                     sp_matrix_ptr mtx_to);
 
 /*
@@ -137,14 +137,14 @@ void sp_matrix_create_ilu(sp_matrix_ptr self,sp_matrix_skyline_ilu_ptr ilu);
  * mtx - is the (reordered) sparse matrix to take data from
  * Acts as a copy-constructor
  */
-void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,
+void sp_matrix_skyline_init(sp_matrix_skyline_ptr self,
                             sp_matrix_ptr mtx);
 /*
  * Destructor for a sparse matrix in CSLR format
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
+void sp_matrix_skyline_free(sp_matrix_skyline_ptr self);
 
 /* getters/setters for a sparse matrix */
 
@@ -225,11 +225,11 @@ void sp_matrix_solve_pcg_ilu(sp_matrix_ptr self,
  * lu_lowertr - lower triangle of the ILU decomposition
  * lu_uppertr - upper triangle of the ILU decomposition
  */
-void init_copy_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self,
+void sp_matrix_skyline_ilu_copy_init(sp_matrix_skyline_ilu_ptr self,
                                      sp_matrix_skyline_ptr parent);
 
 /* Free the sparse matrix skyline & ilu decomposition structure */
-void free_sp_matrix_skyline_ilu(sp_matrix_skyline_ilu_ptr self);
+void sp_matrix_skyline_ilu_free(sp_matrix_skyline_ilu_ptr self);
 
 /*
  * by given L,U - ILU decomposition of the matrix A

@@ -295,7 +295,7 @@ typedef struct fea_solver_tag {
                                  * load_steps_p[0..current_load_step] shall be
                                  * filled during load steps iterations
                                  */
-  sp_matrix global_mtx;     /* global stiffness matrix */
+  sp_matrix global_mtx;         /* global stiffness matrix */
   real* global_forces_vct;      /* external forces vector */
   real* global_reactions_vct;   /* reactions in fixed dofs */
   real* global_solution_vct;    /* vector of global solution */
@@ -326,56 +326,56 @@ BOOL initial_data_load(char *filename,
 /* Allocators for structures with a data from file           */
 
 /* Initializa fea task structure and fill with default values */
-fea_task_ptr new_fea_task();
+fea_task_ptr fea_task_alloc();
 /* Initializes fea solution params with default values */
-fea_solution_params_ptr new_fea_solution_params();
+fea_solution_params_ptr fea_solution_params_alloc();
 /* Initialize nodes array but not initialize particular arrays  */
-nodes_array_ptr new_nodes_array();
+nodes_array_ptr nodes_array_alloc();
 /* create a copy of nodes array */
-nodes_array_ptr new_copy_nodes_array(nodes_array_ptr nodes);
+nodes_array_ptr nodes_array_copy_alloc(nodes_array_ptr nodes);
 /* Initialize elements array but not initialize particular elements */
-elements_array_ptr new_elements_array();
+elements_array_ptr elements_array_alloc();
 /* Initialize boundary nodes array but not initialize particular nodes */
-presc_boundary_array_ptr new_presc_boundary_array();
+presc_boundary_array_ptr presc_boundary_array_alloc();
 
 /*
  * Constructor for the main application structure
  * all parameters shall be properly constructed and initialized
  * with data from file
  */
-fea_solver_ptr new_fea_solver(fea_task_ptr task,
-                              fea_solution_params_ptr fea_params,
-                              nodes_array_ptr nodes,
-                              elements_array_ptr elements,
-                              presc_boundary_array_ptr presc);
+fea_solver_ptr fea_solver_alloc(fea_task_ptr task,
+                                fea_solution_params_ptr fea_params,
+                                nodes_array_ptr nodes,
+                                elements_array_ptr elements,
+                                presc_boundary_array_ptr presc);
 
 
 /*************************************************************/
 /* Deallocators for internal data structures                 */
 
-void free_fea_solution_params(fea_solution_params_ptr params);
-void free_fea_task(fea_task_ptr task);
-void free_nodes_array(nodes_array_ptr nodes);
-void free_elements_array(elements_array_ptr elements);
-void free_presc_boundary_array(presc_boundary_array_ptr presc);
+void fea_solution_params_free(fea_solution_params_ptr params);
+void fea_task_free(fea_task_ptr task);
+void nodes_array_free(nodes_array_ptr nodes);
+void elements_array_free(elements_array_ptr elements);
+void presc_boundary_array_free(presc_boundary_array_ptr presc);
 
 /*
  * Destructor for the main solver
  * Will also clear all aggregated structures
  */
-void free_fea_solver(fea_solver_ptr solver);
+void fea_solver_free(fea_solver_ptr solver);
 
 /*
  * Constructor for the shape functions gradients array
  * element - index of the element to calculate in
  * gauss - index of gauss node
  */
-shape_gradients_ptr solver_new_shape_gradients(fea_solver_ptr self,
-                                               nodes_array_ptr nodes,
-                                               int element,
-                                               int gauss);
+shape_gradients_ptr solver_shape_gradients_alloc(fea_solver_ptr self,
+                                                 nodes_array_ptr nodes,
+                                                 int element,
+                                                 int gauss);
 /* Destructor for the shape gradients array */
-void solver_free_shape_gradients(fea_solver_ptr self,
+void solver_shape_gradients_free(fea_solver_ptr self,
                                  shape_gradients_ptr grads);
 
 /*
@@ -401,16 +401,16 @@ real solver_node_dof(fea_solver_ptr self,
  * It doesn't allocate a memory for a step itself,
  * just initializes the internal structures
  */
-void init_load_step(fea_solver_ptr self,
-                    load_step_ptr step,
-                    int step_number);
+void solver_load_step_init(fea_solver_ptr self,
+                           load_step_ptr step,
+                           int step_number);
             
 /*
  * Desctructor for the load step structure.
  * it doesn't deallocate a memory for a step itself,
  * just frees all step internal structures
  */
-void free_load_step(fea_solver_ptr self, load_step_ptr step);
+void solver_load_step_free(fea_solver_ptr self, load_step_ptr step);
 
 
 /*************************************************************/
@@ -668,11 +668,11 @@ void solver_update_nodes_with_bc(fea_solver_ptr self, real lambda);
  * Creates a particular gauss node for the element
  * with index element_index and gauss node number gauss_node_index
  */
-gauss_node_ptr solver_new_gauss_node(fea_solver_ptr self,
-                                     int gauss_node_index);
+gauss_node_ptr solver_gauss_node_alloc(fea_solver_ptr self,
+                                       int gauss_node_index);
 
 /* Deallocate gauss node */
-void solver_free_gauss_node(fea_solver_ptr self,
+void solver_gauss_node_free(fea_solver_ptr self,
                             gauss_node_ptr node);
 
 
