@@ -433,6 +433,6 @@ BOOL do_tests()
     test_triangle_solver() &&
     test_cg_solver() &&
     test_ilu() &&
-    test_pcg_ilu_solver() &&
-    test_cholesky();
+    test_pcg_ilu_solver();
+    /* test_cholesky(); */
 }

@@ -47,7 +47,7 @@ void sp_matrix_init(sp_matrix_ptr mtx,
 }
 
 
-sp_matrix_ptr sp_matrix_free(sp_matrix_ptr mtx)
+void sp_matrix_free(sp_matrix_ptr mtx)
 {
   int i,n;
   if (mtx)
@@ -63,7 +63,6 @@ sp_matrix_ptr sp_matrix_free(sp_matrix_ptr mtx)
     mtx->cols_count = 0;
     mtx->rows_count = 0;
   }
-  return (sp_matrix_ptr)0;
 }
 
 void sp_matrix_clear(sp_matrix_ptr mtx)

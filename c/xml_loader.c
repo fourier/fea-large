@@ -138,7 +138,7 @@ BOOL expat_data_load(char *filename,
                      fea_solution_params **fea_params,
                      nodes_array **nodes,
                      elements_array **elements,
-                     presc_boundary_array **presc_boundary)
+                     presc_bnd_array **presc_boundary)
 {
   BOOL result = FALSE;
   FILE* xml_document_file;
@@ -191,7 +191,7 @@ BOOL expat_data_load(char *filename,
   parse.fea_params = fea_solution_params_alloc();
   parse.nodes = nodes_array_alloc();
   parse.elements = elements_array_alloc();
-  parse.presc_boundary = presc_boundary_array_alloc();
+  parse.presc_boundary = presc_bnd_array_alloc();
   parse.current_size = 0;
   parse.current_text = (char*)0;
   /* set user data */
@@ -534,10 +534,10 @@ void process_prescribed_displacements(parse_data* data, const XML_Char **atts)
         text = trim_whitespaces(*atts,strlen(*atts));
         data->presc_boundary->prescribed_nodes_count = atoi(text);
         size = data->presc_boundary->prescribed_nodes_count;
-        size = size*sizeof(prescibed_boundary_node);
+        size = size*sizeof(prescribed_bnd_node);
         /* allocate storage for prescribed nodes */
         data->presc_boundary->prescribed_nodes =
-          (prescibed_boundary_node*)malloc(size);
+          (prescribed_bnd_node*)malloc(size);
         if (text) free(text);
       }
     }
@@ -551,7 +551,7 @@ void process_prescribed_node(parse_data* data, const XML_Char **atts)
 {
   /* <presc-node id="1" node-id="10" x="0" y="0" z="0" type="7"/> */
   char* text = (char*)0;
-  prescibed_boundary_node node;
+  prescribed_bnd_node node;
   int id = -1;
   if ( data->parent_tag == PRESCRIBED_DISPLACEMENTS )
   {

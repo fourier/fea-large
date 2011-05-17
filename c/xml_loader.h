@@ -34,7 +34,7 @@ typedef struct parse_data_tag {
   fea_solution_params *fea_params;
   nodes_array *nodes;
   elements_array *elements;
-  presc_boundary_array *presc_boundary;
+  presc_bnd_array *presc_boundary;
   xml_format_tags parent_tag;
   char* current_text;
   int current_size;
@@ -129,7 +129,7 @@ BOOL expat_data_load(char *filename,
                      fea_solution_params **fea_params,
                      nodes_array **nodes,
                      elements_array **elements,
-                     presc_boundary_array **presc_boundary);
+                     presc_bnd_array **presc_boundary);
 
 
 #endif /* USE_EXPAT */

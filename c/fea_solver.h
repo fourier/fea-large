@@ -113,7 +113,7 @@ typedef fea_model* fea_model_ptr;
 typedef struct fea_task_tag {
   task_type type;               /* type of the task to solve */
   fea_model model;              /* material model */
-  unsigned char dof;            /* number of degree of freedom */
+  int dof;                      /* number of degree of freedom */
   element_type ele_type;        /* type of the element */
   int load_increments_count;    /* number of load increments */
   real desired_tolerance;       /* desired energy tolerance */
@@ -154,22 +154,22 @@ typedef struct elements_array_tag {
 typedef elements_array* elements_array_ptr;
 
 /* Particular prescribed boundary node */
-typedef struct prescibed_boundary_node_tag {
+typedef struct prescribed_bnd_node_tag {
   int node_number;
   real values[MAX_DOF];
   presc_boundary_type type;
-} prescibed_boundary_node;
-typedef prescibed_boundary_node* prescibed_boundary_node_ptr;
+} prescribed_bnd_node;
+typedef prescribed_bnd_node* prescribed_bnd_node_ptr;
 
 /*
  * An array of prescribed boundary conditions
  * either fixed and with prescribed displacements
  */
-typedef struct presc_boundary_array_tag {
+typedef struct prescibed_bnd_array_tag {
   int prescribed_nodes_count;
-  prescibed_boundary_node* prescribed_nodes;
-} presc_boundary_array;
-typedef presc_boundary_array* presc_boundary_array_ptr;
+  prescribed_bnd_node* prescribed_nodes;
+} presc_bnd_array;
+typedef presc_bnd_array* presc_bnd_array_ptr;
 
 /*************************************************************/
 /* Application-specific structures                           */
@@ -261,7 +261,7 @@ typedef struct fea_solver_tag {
   nodes_array_ptr nodes0_p;
   nodes_array_ptr nodes_p;              
   elements_array_ptr elements_p;
-  presc_boundary_array_ptr presc_boundary_p;
+  presc_bnd_array_ptr presc_boundary_p;
   elements_database elements_db;  /* array of pre-constructed
                                    * values of derivatives of the
                                    * isoparametric shape functions
@@ -316,7 +316,7 @@ BOOL initial_data_load(char *filename,
                        fea_solution_params_ptr *fea_params,
                        nodes_array_ptr *nodes,
                        elements_array_ptr *elements,
-                       presc_boundary_array_ptr *presc_boundary);
+                       presc_bnd_array_ptr *presc_boundary);
 
 
 /*************************************************************/
@@ -336,7 +336,7 @@ nodes_array_ptr nodes_array_copy_alloc(nodes_array_ptr nodes);
 /* Initialize elements array but not initialize particular elements */
 elements_array_ptr elements_array_alloc();
 /* Initialize boundary nodes array but not initialize particular nodes */
-presc_boundary_array_ptr presc_boundary_array_alloc();
+presc_bnd_array_ptr presc_bnd_array_alloc();
 
 /*
  * Constructor for the main application structure
@@ -347,23 +347,23 @@ fea_solver_ptr fea_solver_alloc(fea_task_ptr task,
                                 fea_solution_params_ptr fea_params,
                                 nodes_array_ptr nodes,
                                 elements_array_ptr elements,
-                                presc_boundary_array_ptr presc);
+                                presc_bnd_array_ptr presc);
 
 
 /*************************************************************/
 /* Deallocators for internal data structures                 */
 
-void fea_solution_params_free(fea_solution_params_ptr params);
-void fea_task_free(fea_task_ptr task);
-void nodes_array_free(nodes_array_ptr nodes);
-void elements_array_free(elements_array_ptr elements);
-void presc_boundary_array_free(presc_boundary_array_ptr presc);
+fea_solution_params_ptr fea_solution_params_free(fea_solution_params_ptr ptr);
+fea_task_ptr fea_task_free(fea_task_ptr task);
+nodes_array_ptr nodes_array_free(nodes_array_ptr nodes);
+elements_array_ptr elements_array_free(elements_array_ptr elements);
+presc_bnd_array_ptr presc_bnd_array_free(presc_bnd_array_ptr presc);
 
 /*
  * Destructor for the main solver
  * Will also clear all aggregated structures
  */
-void fea_solver_free(fea_solver_ptr solver);
+fea_solver_ptr fea_solver_free(fea_solver_ptr solver);
 
 /*
  * Constructor for the shape functions gradients array
@@ -375,8 +375,8 @@ shape_gradients_ptr solver_shape_gradients_alloc(fea_solver_ptr self,
                                                  int element,
                                                  int gauss);
 /* Destructor for the shape gradients array */
-void solver_shape_gradients_free(fea_solver_ptr self,
-                                 shape_gradients_ptr grads);
+shape_gradients_ptr solver_shape_gradients_free(fea_solver_ptr self,
+                                                shape_gradients_ptr grads);
 
 /*
  * fills the self->shape_gradients or self->shape_gradients0 array
@@ -524,7 +524,7 @@ void solve(fea_task_ptr ask,
            fea_solution_params_ptr fea_params,
            nodes_array_ptr nodes,
            elements_array_ptr elements,
-           presc_boundary_array_ptr presc_boundary);
+           presc_bnd_array_ptr presc_boundary);
 
 #ifdef DUMP_DATA
 /* Dump input data to check if parser works correctly */
@@ -533,7 +533,7 @@ void dump_input_data( char* filename,
                       fea_solution_params_ptr fea_params,
                       nodes_array_ptr nodes,
                       elements_array_ptr elements,
-                      presc_boundary_array_ptr presc_boundary);
+                      presc_bnd_array_ptr presc_boundary);
 #endif
 
 /*************************************************************/
@@ -672,8 +672,8 @@ gauss_node_ptr solver_gauss_node_alloc(fea_solver_ptr self,
                                        int gauss_node_index);
 
 /* Deallocate gauss node */
-void solver_gauss_node_free(fea_solver_ptr self,
-                            gauss_node_ptr node);
+gauss_node_ptr solver_gauss_node_free(fea_solver_ptr self,
+                                      gauss_node_ptr node);
 
 
 

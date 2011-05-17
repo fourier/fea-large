@@ -103,7 +103,7 @@ void sp_matrix_init(sp_matrix_ptr mtx,
  * This function doesn't deallocate memory for the matrix itself,
  * only for its structures.
  */
-sp_matrix_ptr sp_matrix_free(sp_matrix_ptr mtx);
+void sp_matrix_free(sp_matrix_ptr mtx);
 
 /*
  * Clear the sparse matrix.
