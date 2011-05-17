@@ -212,7 +212,7 @@ void init_sp_matrix_skyline(sp_matrix_skyline_ptr self,sp_matrix_ptr mtx)
   /* fill diagonal */
   for (i = 0; i < mtx->rows_count; ++ i)
   {
-    pvalue = sp_matrix_element(mtx,i,i);
+    pvalue = sp_matrix_element_ptr(mtx,i,i);
     self->diag[i] = pvalue ? *pvalue : 0;
   }
   /* now fill arrays with proper values */
@@ -269,7 +269,7 @@ void free_sp_matrix_skyline(sp_matrix_skyline_ptr self)
 }
 
 
-real* sp_matrix_element(sp_matrix_ptr self,int i, int j)
+real* sp_matrix_element_ptr(sp_matrix_ptr self,int i, int j)
 {
   int index;
   /* check for matrix and if i,j are proper indicies */
@@ -927,7 +927,7 @@ void sp_matrix_dump(sp_matrix_ptr self,char* filename)
     {
       for (j = 0; j < self->rows_count; ++ j)
       {
-        pvalue = sp_matrix_element(self,i,j);
+        pvalue = sp_matrix_element_ptr(self,i,j);
         value = pvalue ? *pvalue : 0;
         fprintf(f,"%e ",value);
       }

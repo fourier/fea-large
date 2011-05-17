@@ -150,7 +150,7 @@ void free_sp_matrix_skyline(sp_matrix_skyline_ptr self);
 
 /* returns a pointer to the specific element
  * zero pointer if not found */
-real* sp_matrix_element(sp_matrix_ptr self,int i, int j);
+real* sp_matrix_element_ptr(sp_matrix_ptr self,int i, int j);
 /* adds an element value to the matrix node (i,j) and return (i,j) */
 real sp_matrix_element_add(sp_matrix_ptr self,
                            int i, int j, real value);

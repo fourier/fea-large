@@ -1262,7 +1262,7 @@ void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
   real *pvalue,*pvalue1,value;
   int size = self->global_mtx.rows_count;
   int j;
-  pvalue = sp_matrix_element(&self->global_mtx,index,index);
+  pvalue = sp_matrix_element_ptr(&self->global_mtx,index,index);
   /* global matrix always shall have
    * nonzero diagonal elements */
   assert(pvalue);
@@ -1271,13 +1271,13 @@ void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
   
   for (j = 0; j < size; ++ j)
   {
-    pvalue = sp_matrix_element(&self->global_mtx,j,index);
+    pvalue = sp_matrix_element_ptr(&self->global_mtx,j,index);
     if (pvalue)
     {
       self->global_forces_vct[j] -= *pvalue*presc;
       *pvalue = 0;
     }
-    pvalue = sp_matrix_element(&self->global_mtx,index,j);
+    pvalue = sp_matrix_element_ptr(&self->global_mtx,index,j);
     if (pvalue)
       *pvalue = 0;
   }
