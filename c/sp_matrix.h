@@ -42,7 +42,7 @@ typedef sp_matrix* sp_matrix_ptr;
 /*
  * Sparse matrix CSLR(Skyline) format
  * used in sparse iterative solvers
- * Constructed from Sparse Matrix in assumption of the symmetric
+ * Constructed from Sparse Matrix with assumption of the symmetric
  * matrix portrait
  */
 typedef struct sp_matrix_skyline_tag {

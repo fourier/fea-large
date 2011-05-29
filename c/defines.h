@@ -29,6 +29,9 @@ typedef int BOOL;
  */
 #define DEPRECATED __attribute__ ((deprecated))
 #define UNUSED __attribute__ ((unused))
+#else
+#define DEPRECATED
+#define UNUSED
 #endif /* __GNUC__ */
 
 /* Redefine type of the floating point values */

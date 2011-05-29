@@ -59,7 +59,7 @@ int main(int argc, char **argv)
 {
   char* filename = 0;
   int result = 0;
-
+  
   /* Perform tests before start */
   if (!do_tests())
   {
@@ -768,11 +768,10 @@ void solver_create_residual_forces(fea_solver_ptr self)
 /* Create global stiffness matrix */
 void solver_create_stiffness(fea_solver_ptr self)
 {
-  int el = 0;
+  int el;
   /* clear global stiffness matrix before constructing a new one */
   sp_matrix_clear(&self->global_mtx);
-
-  for (; el < self->elements_p->elements_count; ++ el)
+  for (el = 0; el < self->elements_p->elements_count; ++ el)
   {
     solver_local_constitutive_part(self,el);
     solver_local_initial_stess_part(self,el);
