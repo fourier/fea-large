@@ -1,16 +1,17 @@
 # -*- Mode: makefile; -*-
 # Makefile for a FEA finite-strains project
 
-CC = gcc
+CC = gcc-mp-4.5
 
 EXPAT_ROOT = ../../../../expat-2.0.1
+LIBSEXP_PATH = ../../../libsexp
 
 CFLAGS = -ggdb -pg -ansi -pedantic -Wall -Wextra -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wdeclaration-after-statement -Wmissing-declarations -fopenmp
-DEFINES = -DUSE_EXPAT -DCURRENT_SHAPE_GRADIENTS
+DEFINES = -DUSE_EXPAT -DCURRENT_SHAPE_GRADIENTS 
 #-DDUMP_DATA
 
-INCLUDES = -I $(EXPAT_ROOT)/lib
-LINKFLAGS =  $(EXPAT_ROOT)/.libs/libexpat.a -pg
+INCLUDES = -I $(EXPAT_ROOT)/lib -I $(LIBSEXP_PATH)
+LINKFLAGS =  $(EXPAT_ROOT)/.libs/libexpat.a $(LIBSEXP_PATH)/libsexp.a -pg
 
 SOURCES := $(wildcard *.c)
 HEADERS := $(wildcard *.h)

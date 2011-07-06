@@ -10,6 +10,7 @@
 #include "dense_matrix.h"
 #include "tests.h"
 #include "xml_loader.h"
+#include "sexp_loader.h"
 
 
 /*
@@ -99,10 +100,10 @@ int do_main(char* filename)
     printf("Error. Unable to load %s.\n",filename);
     result = 1;
   }
-  
-  /* solve task */
-  solve(task, fea_params, nodes, elements, presc_boundary);
-  
+  else                          /* solve task */
+  {
+    solve(task, fea_params, nodes, elements, presc_boundary);
+  }
   return result;
 }
 
@@ -221,7 +222,7 @@ int parse_cmdargs(int argc, char **argv,char **filename)
 {
   if (argc < 2)
   {
-    printf("Usage: fea_solve input_data.xml\n");
+    printf("Usage: fea_solve input_data.{xml|sexp}\n");
     return 1;
   }
   *filename = argv[1];
@@ -1715,10 +1716,39 @@ BOOL initial_data_load(char *filename,
                        presc_bnd_array_ptr *presc_boundary)
 {
   BOOL result = FALSE;
+  static const char* xml_ext = "XML";
+  static const char* sexp_ext = "SEXP";
+  char* p;
+  /* guess by extension */
+  char* ext_ptr = strrchr(filename,'.');
+  
+  if (ext_ptr && *ext_ptr  && *(ext_ptr+1)) /* the extension shall exist */
+  {
+    p = ext_ptr+1;
+    /* compare with XML extension */
+    while(*p)
+      if (toupper(*p++) != *xml_ext++)
+        break;
+    if (!*p && !*xml_ext)       /* XML */
+    {
 #ifdef USE_EXPAT
-  result = expat_data_load(filename,task,fea_params,nodes,elements,
-                           presc_boundary);
+      result = expat_data_load(filename,task,fea_params,nodes,elements,
+                               presc_boundary);
 #endif
+      return result;
+    }
+    
+    p = ext_ptr+1;
+    /* compare with SEXP extension */
+    while(*p)
+      if (toupper(*p++) != *sexp_ext++)
+        break;
+    if (!*p && !*sexp_ext)       /* SEXP */
+    {
+      result = sexp_data_load(filename,task,fea_params,nodes,elements,
+                              presc_boundary);
+    }
+  }
   return result;
 }
 
