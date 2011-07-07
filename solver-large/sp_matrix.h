@@ -155,6 +155,10 @@ real* sp_matrix_element_ptr(sp_matrix_ptr self,int i, int j);
 real sp_matrix_element_add(sp_matrix_ptr self,
                            int i, int j, real value);
 
+/* shortcut for adding of the matrix elements */
+#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
+
+
 /* rearrange columns of a matrix to prepare for solving SLAE */
 void sp_matrix_compress(sp_matrix_ptr self);
 

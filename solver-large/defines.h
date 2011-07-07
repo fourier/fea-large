@@ -52,7 +52,4 @@ typedef double real;
 /* Kroneker delta */
 #define DELTA(i,j) ((i)==(j) ? 1 : 0)
 
-/* shortcut for adding of the matrix elements */
-#define MTX(m,i,j,v) sp_matrix_element_add((m),(i),(j),(v));
-
 #endif /* __DEFINES_H__ */
