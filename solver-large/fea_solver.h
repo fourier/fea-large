@@ -520,11 +520,16 @@ int do_main(char* filename);
  * Solver function which shall be called
  * when all data read to an appropriate structures
  */
-void solve(fea_task_ptr ask,
+void solve(fea_task_ptr task,
            fea_solution_params_ptr fea_params,
            nodes_array_ptr nodes,
            elements_array_ptr elements,
            presc_bnd_array_ptr presc_boundary);
+
+/*
+ * Solver wrapper function to solve SLAE
+ */
+BOOL solver_solve_slae(fea_solver_ptr solver);
 
 #ifdef DUMP_DATA
 /* Dump input data to check if parser works correctly */

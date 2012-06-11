@@ -6,11 +6,14 @@
 #include <math.h>
 #include <assert.h>
 #include "fea_solver.h"
-#include "sp_matrix.h"
 #include "dense_matrix.h"
 #include "tests.h"
 #include "xml_loader.h"
 #include "sexp_loader.h"
+
+#include "sp_matrix.h"
+#include "sp_file.h"
+
 
 
 /*
@@ -181,11 +184,14 @@ void solve( fea_task_ptr task,
       }
       /* apply prescribed boundary conditions */
       solver_apply_prescribed_bc(solver,0);
-
+      
       /* solve global equation system K*u=-R */
+      solver_solve_slae(solver);
+/*
       sp_matrix_solve(&solver->global_mtx,
                       solver->global_forces_vct,
                       solver->global_solution_vct);
+*/
       /* check for convergence */
 
       tolerance = cdot(solver->global_forces_vct,
@@ -215,6 +221,18 @@ void solve( fea_task_ptr task,
   solver->export_function(solver,"deformed.msh");
   
   fea_solver_free(solver);
+}
+
+BOOL solver_solve_slae(fea_solver_ptr solver)
+{
+  sp_matrix_yale mtx;
+  sp_matrix_yale_init(&mtx,&solver->global_mtx);
+  sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx");
+  sp_matrix_save_file(&solver->global_mtx,"fea_matrix1.mtx");
+  /* sp_matrix_solve(&solver->global_mtx, */
+  /*                 solver->global_forces_vct, */
+
+  return FALSE;
 }
 
 
