@@ -13,6 +13,7 @@
 #endif
 #include "defines.h"
 #include "sp_matrix.h"
+#include "sp_direct.h"
 #include "dense_matrix.h"
 
 
@@ -296,6 +297,9 @@ typedef struct fea_solver_tag {
                                  * filled during load steps iterations
                                  */
   sp_matrix global_mtx;         /* global stiffness matrix */
+  sp_chol_symbolic_ptr symb_chol; /* symbolic Cholesky decomposition
+                                   * of the global stiffness matrix
+                                   */
   real* global_forces_vct;      /* external forces vector */
   real* global_reactions_vct;   /* reactions in fixed dofs */
   real* global_solution_vct;    /* vector of global solution */

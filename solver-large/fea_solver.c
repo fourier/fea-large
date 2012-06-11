@@ -127,10 +127,10 @@ void solve( fea_task_ptr task,
 #endif
   /* Prepare solver instance */
   solver = fea_solver_alloc(task,
-                          fea_params,
-                          nodes,
-                          elements,
-                          presc_boundary);
+                            fea_params,
+                            nodes,
+                            elements,
+                            presc_boundary);
 #ifdef DUMP_DATA
   /* solver_update_nodes_with_bc(solver, 1); */
   /* dump_input_data("input1.txt",task,fea_params,solver->nodes_p,elements,
@@ -227,11 +227,19 @@ BOOL solver_solve_slae(fea_solver_ptr solver)
 {
   sp_matrix_yale mtx;
   sp_matrix_yale_init(&mtx,&solver->global_mtx);
-  sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx");
-  sp_matrix_save_file(&solver->global_mtx,"fea_matrix1.mtx");
-  /* sp_matrix_solve(&solver->global_mtx, */
-  /*                 solver->global_forces_vct, */
-
+  /* sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx"); */
+  if (!solver->symb_chol)
+  {
+    solver->symb_chol = calloc(1,sizeof(sp_chol_symbolic));
+    if (!sp_matrix_yale_chol_symbolic(&mtx,solver->symb_chol))
+      error("Unable to create symbolic Cholesky decomposition\n");
+  }
+  if (!sp_matrix_yale_chol_symbolic_solve(&mtx,
+                                          solver->symb_chol,
+                                          solver->global_forces_vct,
+                                          solver->global_solution_vct))
+    error("Unable to solve SLAE using Cholesky decomposition");
+  
   return FALSE;
 }
 
@@ -360,7 +368,8 @@ fea_solver* fea_solver_alloc(fea_task_ptr task,
   /* approximate bandwidth of a global matrix
    * usually sqrt(msize)*2*/
   bandwidth = (int)sqrt(msize)*2;
-  sp_matrix_init(&solver->global_mtx,msize,msize,bandwidth,CRS);
+  sp_matrix_init(&solver->global_mtx,msize,msize,bandwidth,CCS);
+  solver->symb_chol = 0;
   /* allocate memory for global forces and solution vectors */
   solver->global_forces_vct = (real*)malloc(sizeof(real)*msize);
   solver->global_solution_vct = (real*)malloc(sizeof(real)*msize);
