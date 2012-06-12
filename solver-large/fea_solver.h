@@ -118,6 +118,7 @@ typedef struct fea_task_tag {
   element_type ele_type;        /* type of the element */
   int load_increments_count;    /* number of load increments */
   real desired_tolerance;       /* desired energy tolerance */
+  int max_newton_count;         /* maximum number of Newton's iterations */
   int linesearch_max;           /* maximum number of line searches */
   int arclength_max;            /* maximum number of arc lenght searches */
   BOOL modified_newton;         /* use modified Newton's method or not */

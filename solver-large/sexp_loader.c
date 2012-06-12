@@ -4,6 +4,8 @@
 #include <ctype.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <limits.h>
+
 /*
  * by some reason necessary to include this to avoid
  * collect2: ld terminated with signal 11 [Segmentation fault]
@@ -87,6 +89,9 @@ static void process_solution(sexp_item* item, parse_data* data)
   data->task->modified_newton = FALSE;
   if (sexp_item_is_symbol(value,"YES") || sexp_item_is_symbol(value,"TRUE"))
     data->task->modified_newton = TRUE;
+  value = sexp_item_attribute(item,"max-newton-count");
+  data->task->max_newton_count = value ? value->atom->value.int_number :
+    INT_MAX;
 }
 
 static void process_element_type(sexp_item* item, parse_data* data)

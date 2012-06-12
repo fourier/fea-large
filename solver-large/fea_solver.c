@@ -187,11 +187,6 @@ void solve( fea_task_ptr task,
       
       /* solve global equation system K*u=-R */
       solver_solve_slae(solver);
-/*
-      sp_matrix_solve(&solver->global_mtx,
-                      solver->global_forces_vct,
-                      solver->global_solution_vct);
-*/
       /* check for convergence */
 
       tolerance = cdot(solver->global_forces_vct,
@@ -206,7 +201,8 @@ void solve( fea_task_ptr task,
       solver_create_current_shape_gradients(solver);
       solver_create_stresses(solver);
 
-    } while ( fabs(tolerance) > solver->task_p->desired_tolerance && it < 100);
+    } while ( fabs(tolerance) > solver->task_p->desired_tolerance &&
+              it < task->max_newton_count);
     /* store current load step */
     solver_load_step_init(solver,
                           &solver->load_steps_p[solver->current_load_step],
@@ -215,9 +211,6 @@ void solve( fea_task_ptr task,
     /* clear stored stiffness matrix */
     sp_matrix_free(&stiffness);
     printf("Load increment %d finished\n",solver->current_load_step);
-    char name[20];
-    sprintf(name,"step%d.msh",solver->current_load_step);
-    solver->export_function(solver,name);
     if (it == 100)
     {
       printf("Unable to finish load step in 100 Newton iterations,exit");
@@ -1605,6 +1598,7 @@ fea_task_ptr fea_task_alloc()
   task->linesearch_max = 0;
   task->arclength_max = 0;
   task->load_increments_count = 0;
+  task->max_newton_count = 0;
   task->type = CARTESIAN3D;
   task->modified_newton = TRUE;
   task->model.model = MODEL_A5;
