@@ -206,7 +206,7 @@ void solve( fea_task_ptr task,
       solver_create_current_shape_gradients(solver);
       solver_create_stresses(solver);
 
-    } while ( fabs(tolerance) > solver->task_p->desired_tolerance);
+    } while ( fabs(tolerance) > solver->task_p->desired_tolerance && it < 100);
     /* store current load step */
     solver_load_step_init(solver,
                           &solver->load_steps_p[solver->current_load_step],
@@ -215,6 +215,14 @@ void solve( fea_task_ptr task,
     /* clear stored stiffness matrix */
     sp_matrix_free(&stiffness);
     printf("Load increment %d finished\n",solver->current_load_step);
+    char name[20];
+    sprintf(name,"step%d.msh",solver->current_load_step);
+    solver->export_function(solver,name);
+    if (it == 100)
+    {
+      printf("Unable to finish load step in 100 Newton iterations,exit");
+      break;
+    }
   }
   /* export solution */
   printf("Exporting data...\n");
