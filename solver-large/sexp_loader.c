@@ -264,7 +264,7 @@ BOOL sexp_data_load(char *filename,
   /* read whole file */
   file_contents = (char*)malloc(file_size+1);
   read_bytes = fread(file_contents,1,file_size,sexp_document_file);
-  if (errno)
+  if (read_bytes != file_size && !feof(sexp_document_file))
   {
     free(file_contents);
     return FALSE;

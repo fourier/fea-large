@@ -14,6 +14,8 @@
 #include "sp_matrix.h"
 #include "sp_file.h"
 
+#include "logger.h"
+
 
 
 /*
@@ -54,7 +56,7 @@ real gauss_nodes5_tetr10[5][4] = { {(-4/5.)/6., 1/4., 1/4., 1/4.},
 
 void error(char* msg)
 {
-  fprintf(stderr,"feasolve error encountered: %s",msg);
+  LOGERROR("feasolve error encountered: %s",msg);
   exit(EXIT_FAILURE);
 }
 
@@ -63,11 +65,17 @@ int main(int argc, char **argv)
 {
   char* filename = 0;
   int result = 0;
+  char logfilename[255];
+  /* Initialize logger */
+  logger_parameters params;
+  
+  params.log_level = LOG_LEVEL_ALL;
+  params.log_format = LOG_FORMAT_SEXP;
   
   /* Perform tests before start */
   if (!do_tests())
   {
-    printf("Error! Tests failed!\n");
+    fprintf(stderr,"Error! Tests failed!\n");
     return 1;
   }
   
@@ -75,8 +83,14 @@ int main(int argc, char **argv)
   {
     if ( TRUE == (result = parse_cmdargs(argc, argv,&filename)))
       break;
-    if ( TRUE == (result = do_main(filename)))
-      break;
+    /* initialize logger */
+    sprintf(logfilename,"%s.log",argv[0]);
+    params.log_file_path = logfilename;
+    params.log_rotate_count = 10;
+    logger_init_with_params(&params);
+    /* start the calculation */
+    result = do_main(filename);
+    logger_fini();
   } while(0);
 
   return result;
@@ -100,7 +114,7 @@ int do_main(char* filename)
                         &elements,
                         &presc_boundary))
   {
-    printf("Error. Unable to load %s.\n",filename);
+    LOGERROR("Error. Unable to load %s.",filename);
     result = 1;
   }
   else                          /* solve task */
@@ -193,8 +207,8 @@ void solve( fea_task_ptr task,
                        solver->global_solution_vct,
                        solver->global_mtx.rows_count);
     
-      printf("Tolerance <X,R> = %e\n",tolerance);
-      printf("Newton iteration %d finished\n",it);
+      LOG("Tolerance <X,R> = %e",tolerance);
+      LOG("Newton iteration %d finished",it);
     
       /* update nodes array with solution */
       solver_update_nodes_with_solution(solver,solver->global_solution_vct);
@@ -210,15 +224,16 @@ void solve( fea_task_ptr task,
 
     /* clear stored stiffness matrix */
     sp_matrix_free(&stiffness);
-    printf("Load increment %d finished\n",solver->current_load_step);
-    if (it == 100)
+    LOG("Load increment %d finished",solver->current_load_step);
+    if (it == solver->task_p->max_newton_count)
     {
-      printf("Unable to finish load step in 100 Newton iterations,exit");
+      LOGERROR("Unable to finish load step in %d Newton iterations,exit",
+               solver->task_p->max_newton_count);
       break;
     }
   }
   /* export solution */
-  printf("Exporting data...\n");
+  LOG("Exporting data...");
   solver->export_function(solver,"deformed.msh");
   
   fea_solver_free(solver);
@@ -521,8 +536,7 @@ void solver_create_element_params(fea_solver_ptr solver)
     break;
   default:
     /* TODO: add error handling here */
-    printf("Error: unknown element type");
-    exit(1);
+    error("Error: unknown element type");
   };
   
 }
