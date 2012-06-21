@@ -87,6 +87,7 @@ int main(int argc, char **argv)
     sprintf(logfilename,"%s.log",argv[0]);
     params.log_file_path = logfilename;
     params.log_rotate_count = 10;
+    params.use_stdout = 1;
     logger_init_with_params(&params);
     /* start the calculation */
     result = do_main(filename);
