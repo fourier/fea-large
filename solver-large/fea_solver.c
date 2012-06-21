@@ -198,7 +198,6 @@ void solve( fea_task_ptr task,
       }
       /* apply prescribed boundary conditions */
       solver_apply_prescribed_bc(solver,0);
-      
       /* solve global equation system K*u=-R */
       solver_solve_slae(solver);
       /* check for convergence */
@@ -224,7 +223,7 @@ void solve( fea_task_ptr task,
 
     /* clear stored stiffness matrix */
     sp_matrix_free(&stiffness);
-    LOG("Load increment %d finished",solver->current_load_step);
+    LOG("Load increment %d finished",solver->current_load_step+1);
     if (it == solver->task_p->max_newton_count)
     {
       LOGERROR("Unable to finish load step in %d Newton iterations,exit",
@@ -1304,30 +1303,16 @@ void solver_apply_bc_general(fea_solver_ptr self,apply_bc_t apply,real lambda)
 
 void solver_apply_single_bc(fea_solver_ptr self, int index, real presc)
 {
-  real *pvalue,*pvalue1,value;
-  int size = self->global_mtx.rows_count;
+  real value;
   int j;
-  pvalue = sp_matrix_element_ptr(&self->global_mtx,index,index);
-  /* global matrix always shall have
-   * nonzero diagonal elements */
-  assert(pvalue);
-  pvalue1 = pvalue;
-  value = *pvalue;
-  
-  for (j = 0; j < size; ++ j)
-  {
-    pvalue = sp_matrix_element_ptr(&self->global_mtx,j,index);
-    if (pvalue)
-    {
-      self->global_forces_vct[j] -= *pvalue*presc;
-      *pvalue = 0;
-    }
-    pvalue = sp_matrix_element_ptr(&self->global_mtx,index,j);
-    if (pvalue)
-      *pvalue = 0;
-  }
-  
-  *pvalue1 = value;
+  /* update global forces vector */
+  /* since matrix is symmetric ith row = ith column */
+  for (j = 0; j <= self->global_mtx.storage[index].last_index; ++ j)
+    self->global_forces_vct[self->global_mtx.storage[index].indexes[j]]
+      -= self->global_mtx.storage[index].values[j]*presc;
+
+  /* cancellation of the 'index' row and column */
+  value = sp_matrix_cross_cancellation(&self->global_mtx,index);
   self->global_forces_vct[index] = value*presc;
 }
 
