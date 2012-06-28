@@ -8,9 +8,6 @@
 #include <ctype.h>
 #include <math.h>
 #include <assert.h>
-#ifdef USE_EXPAT
-#include <expat.h>
-#endif
 #include "defines.h"
 #include "sp_matrix.h"
 #include "sp_direct.h"
@@ -20,7 +17,6 @@
 /*************************************************************/
 /* Global variables                                          */
 
-extern int errno;
 typedef struct fea_solver_tag* fea_solver_ptr;
 
 /*************************************************************/
@@ -99,7 +95,7 @@ typedef enum presc_boundary_type_enum {
 /*************************************************************/
 /* Data structures                                           */
 
-typedef struct fea_material_model_tag {
+typedef struct {
   model_type model;                         /* model type */
   real parameters[MAX_MATERIAL_PARAMETERS]; /* model material parameters */
   int parameters_count;                     /* number of material params */
@@ -111,7 +107,7 @@ typedef fea_model* fea_model_ptr;
  * Defines an input parameters for the task, independent of 
  * the input geometry and loads
  */
-typedef struct fea_task_tag {
+typedef struct {
   task_type type;               /* type of the task to solve */
   fea_model model;              /* material model */
   int dof;                      /* number of degree of freedom */
@@ -127,7 +123,7 @@ typedef struct fea_task_tag {
 typedef fea_task* fea_task_ptr;
 
 /* Calculated solution parameters */
-typedef struct fea_solution_params_tag {
+typedef struct {
   int nodes_per_element;        /* number of nodes defined in element 
                                    based on fea_task::ele_type */
   int gauss_nodes_count;        /* number of gauss nodes per element */
@@ -138,7 +134,7 @@ typedef fea_solution_params* fea_solution_params_ptr;
 /* Input geometry parameters                                 */
 
 /* An array of nodes. */
-typedef struct nodes_array_tag {
+typedef struct {
   int nodes_count;      /* number of input nodes */
   real **nodes;         /* nodes array,sized as nodes_count x MAX_DOF
                          * so access is  nodes[node_number][dof] */
@@ -146,7 +142,7 @@ typedef struct nodes_array_tag {
 typedef nodes_array* nodes_array_ptr;
 
 /* An array of elements */
-typedef struct elements_array_tag {
+typedef struct {
   int elements_count;           /* number of elements */
   int **elements;               /* elements array, each line represents an
                                  * element. Element is an array of node
@@ -156,7 +152,7 @@ typedef struct elements_array_tag {
 typedef elements_array* elements_array_ptr;
 
 /* Particular prescribed boundary node */
-typedef struct prescribed_bnd_node_tag {
+typedef struct {
   int node_number;
   real values[MAX_DOF];
   presc_boundary_type type;
@@ -167,7 +163,7 @@ typedef prescribed_bnd_node* prescribed_bnd_node_ptr;
  * An array of prescribed boundary conditions
  * either fixed and with prescribed displacements
  */
-typedef struct prescibed_bnd_array_tag {
+typedef struct {
   int prescribed_nodes_count;
   prescribed_bnd_node* prescribed_nodes;
 } presc_bnd_array;
@@ -179,7 +175,7 @@ typedef presc_bnd_array* presc_bnd_array_ptr;
 /* Structure describing information for the gauss node
  * depending on number of shape functions N per element
  * TODO: add tables with layouts in comments */
-typedef struct gauss_node_tag {
+typedef struct {
   real weight;                /* weight for the integration */
   real *forms;                /* shape function values for gauss node, N */
   real **dforms;              /* derivatives of shape functions with
@@ -194,7 +190,7 @@ typedef gauss_node* gauss_node_ptr;
  * Contains all gauss nodes for elements together with
  * derivatives
  */
-typedef struct elements_database_tag {
+typedef struct {
   real (*gauss_nodes_data)[4];  /* pointer to an array of gauss
                                  * coefficients and weights */  
   gauss_node_ptr *gauss_nodes;   /* Gauss nodes array */
@@ -214,7 +210,7 @@ typedef elements_database* elements_database_ptr;
  * X_1 = x, X_2 = y, X_3 = z coordinates
  * 
  */
-typedef struct shape_gradients_tag {
+typedef struct {
   real **grads;                  /* array of derivatives of shape functions
                                   * [dof x nodes_per_element] */
   real detJ;                     /* determinant of Jacobi matrix */
@@ -226,7 +222,7 @@ typedef shape_gradients* shape_gradients_ptr;
  * This structure holds all information needed on the current
  * load increment step
  */
-typedef struct load_step_tag {
+typedef struct {
   int step_number;
   nodes_array_ptr nodes_p;      /* nodes in current configuration for step */
   tensor **graddefs;            /* Components of Deformation gradient tensor

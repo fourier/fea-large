@@ -6,6 +6,15 @@
 #ifdef USE_EXPAT
 #include <expat.h>
 
+/*
+ * by some reason necessary to include this to avoid
+ * collect2: ld terminated with signal 11 [Segmentation fault]
+ * crash.
+ * it is the case since errno is used
+ */
+#include <errno.h>
+
+
 /*************************************************************/
 /* Definition of functions used                              */
 
