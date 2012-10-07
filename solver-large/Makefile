@@ -13,7 +13,8 @@ DEFINES = -DCURRENT_SHAPE_GRADIENTS
 #-DDUMP_DATA -DUSE_EXPAT 
 
 INCLUDES = -I $(EXPAT_ROOT)/lib -I $(LIBSEXP_PATH) -I $(LIBSPM_PATH)/src -I $(LOGGER_PATH)
-LINKFLAGS =  -L $(LIBSEXP_PATH) -lsexp -L $(LIBSPM_PATH)/lib -lspmatrix -L $(LOGGER_PATH) -llogger -lrt -lm 
+LINKFLAGS =  -L $(LIBSEXP_PATH) -lsexp -L $(LIBSPM_PATH)/lib -lspmatrix -L $(LOGGER_PATH) -llogger  -lm
+# -lrt
 # $(EXPAT_ROOT)/.libs/libexpat.a 
 
 SOURCES := $(wildcard *.c)
