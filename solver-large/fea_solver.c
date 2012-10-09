@@ -243,7 +243,9 @@ BOOL solver_solve_slae(fea_solver_ptr solver)
 {
   sp_matrix_yale mtx;
   sp_matrix_yale_init(&mtx,&solver->global_mtx);
-  /* sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx"); */
+  LOGINFO("Preparing to solve SLAE, exporting matrix");
+  sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx");
+  LOGINFO("Starting to solve SLAE");
   if (!solver->symb_chol)
   {
     solver->symb_chol = calloc(1,sizeof(sp_chol_symbolic));
@@ -255,8 +257,8 @@ BOOL solver_solve_slae(fea_solver_ptr solver)
                                           solver->global_forces_vct,
                                           solver->global_solution_vct))
     error("Unable to solve SLAE using Cholesky decomposition");
-  
-  return FALSE;
+  LOGINFO("SLAE solved");
+  return TRUE;
 }
 
 
