@@ -94,6 +94,48 @@ static void process_solution(sexp_item* item, parse_data* data)
     INT_MAX;
 }
 
+static void process_slae_solver(sexp_item* item, parse_data* data)
+{
+  /* determine solver type */
+  sexp_item* value = sexp_item_attribute(item,"type");
+  /* set default values */
+  data->task->solver_type = CG;
+  data->task->solver_tolerance = MAX_ITERATIVE_TOLERANCE;
+  data->task->solver_max_iter = MAX_ITERATIVE_ITERATIONS;
+  if (value)
+  {
+    if (sexp_item_is_symbol(value,"CG"))
+    {
+      data->task->solver_type = CG;
+      value = sexp_item_attribute(item,"tolerance");
+      if (value)
+        data->task->solver_tolerance = atom_token_number(value->atom);
+      value = sexp_item_attribute(item,"max-iterations");
+      data->task->solver_max_iter = value ? value->atom->value.int_number :
+        MAX_ITERATIVE_ITERATIONS;
+    }
+    else if (sexp_item_is_symbol(value,"PCG_ILU"))
+    {
+      data->task->solver_type = PCG_ILU;
+      value = sexp_item_attribute(item,"tolerance");
+      if (value)
+        data->task->solver_tolerance = atom_token_number(value->atom);
+      value = sexp_item_attribute(item,"max-iterations");
+      data->task->solver_max_iter = value ? value->atom->value.int_number :
+        MAX_ITERATIVE_ITERATIONS;
+    } 
+    else if (sexp_item_is_symbol(value,"CHOLESKY"))
+    {
+      data->task->solver_type = CHOLESKY;
+    } 
+    else
+    {
+      printf("unknown solver type '%s'\n",value->atom->value.symbol);
+    }
+  }
+}
+
+
 static void process_element_type(sexp_item* item, parse_data* data)
 {
   sexp_item* value;
@@ -214,6 +256,8 @@ static void traverse_function(sexp_item* item, void* data)
     process_model_parameters(item,parse);
   else if (sexp_item_starts_with_symbol(item,"solution"))
     process_solution(item,parse);
+  else if (sexp_item_starts_with_symbol(item,"slae-solver"))
+    process_slae_solver(item,parse);
   else if (sexp_item_starts_with_symbol(item,"element-type"))
     process_element_type(item,parse);
   else if (sexp_item_starts_with_symbol(item,"line-search"))

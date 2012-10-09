@@ -13,6 +13,10 @@
 #include "sp_direct.h"
 #include "dense_matrix.h"
 
+/* default value of the tolerance for the iterative solvers */
+#define MAX_ITERATIVE_TOLERANCE 1e-14
+/* default value of the max number of iterations for the iterative solvers */
+#define MAX_ITERATIVE_ITERATIONS 20000
 
 /*************************************************************/
 /* Global variables                                          */
@@ -64,23 +68,29 @@ typedef void (*solver_ctensor_t)(fea_solver_ptr self,
 /*************************************************************/
 /* Enumerations declarations                                 */
 
-typedef enum task_type_enum {
+typedef enum  {
   /* PLANE_STRESS, PLANE_STRAIN, AXISYMMETRIC,  */
   CARTESIAN3D
 } task_type;
 
-typedef enum model_type_enum {
+typedef enum {
   MODEL_A5,
   MODEL_COMPRESSIBLE_NEOHOOKEAN
 } model_type;
+
+typedef enum {
+  CG,
+  PCG_ILU,
+  CHOLESKY
+} slae_solver_type;
   
-typedef enum element_type_enum {
+typedef enum  {
   /* TRIANGLE3, TRIANGLE6,TETRAHEDRA4, */
   TETRAHEDRA10
 } element_type;
 
 
-typedef enum presc_boundary_type_enum {
+typedef enum  {
   FREE = 0,                    /* free */
   PRESCRIBEDX = 1,             /* x prescribed */
   PRESCRIBEDY = 2,             /* y prescribed */
@@ -110,6 +120,9 @@ typedef fea_model* fea_model_ptr;
 typedef struct {
   task_type type;               /* type of the task to solve */
   fea_model model;              /* material model */
+  slae_solver_type solver_type; /* SLAE solver */
+  real solver_tolerance;        /* tolerance in case of iterative solver */
+  int solver_max_iter;          /* max number of iters for iterative solver */
   int dof;                      /* number of degree of freedom */
   element_type ele_type;        /* type of the element */
   int load_increments_count;    /* number of load increments */

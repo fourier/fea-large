@@ -12,6 +12,8 @@
 #include "sexp_loader.h"
 
 #include "sp_matrix.h"
+#include "sp_direct.h"
+#include "sp_iter.h"
 #include "sp_file.h"
 
 #include "logger.h"
@@ -239,26 +241,82 @@ void solve( fea_task_ptr task,
   fea_solver_free(solver);
 }
 
-BOOL solver_solve_slae(fea_solver_ptr solver)
+
+static BOOL solver_solve_slae_cg(fea_solver_ptr solver,
+                                 sp_matrix_yale_ptr mtx)
 {
-  sp_matrix_yale mtx;
-  sp_matrix_yale_init(&mtx,&solver->global_mtx);
-  LOGINFO("Preparing to solve SLAE, exporting matrix");
-  sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx");
-  LOGINFO("Starting to solve SLAE");
+  int iter = solver->task_p->solver_max_iter;
+  real tolerance = solver->task_p->solver_tolerance;
+
+  sp_matrix_yale_solve_cg(mtx,
+                          solver->global_forces_vct,
+                          solver->global_forces_vct,
+                          &iter,
+                          &tolerance,
+                          solver->global_solution_vct);
+  return TRUE;
+}
+
+static BOOL solver_solve_slae_pcg_ilu(fea_solver_ptr solver,
+                                      sp_matrix_yale_ptr mtx)
+{
+  sp_matrix_skyline m;
+  sp_matrix_skyline_ilu ILU;
+
+  int iter = solver->task_p->solver_max_iter;
+  real tolerance = solver->task_p->solver_tolerance;
+
+  sp_matrix_skyline_yale_init(&m,mtx);
+  sp_matrix_skyline_ilu_copy_init(&ILU,&m);
+
+  sp_matrix_yale_solve_pcg_ilu(mtx,
+                               &ILU,
+                               solver->global_forces_vct,
+                               solver->global_forces_vct,
+                               &iter,
+                               &tolerance,
+                               solver->global_solution_vct);
+
+  sp_matrix_skyline_ilu_free(&ILU);
+  return TRUE;
+}
+
+static BOOL solver_solve_slae_cholesky(fea_solver_ptr solver,
+                                       sp_matrix_yale_ptr mtx)
+{
   if (!solver->symb_chol)
   {
     solver->symb_chol = calloc(1,sizeof(sp_chol_symbolic));
-    if (!sp_matrix_yale_chol_symbolic(&mtx,solver->symb_chol))
+    if (!sp_matrix_yale_chol_symbolic(mtx,solver->symb_chol))
       error("Unable to create symbolic Cholesky decomposition\n");
   }
-  if (!sp_matrix_yale_chol_symbolic_solve(&mtx,
+  if (!sp_matrix_yale_chol_symbolic_solve(mtx,
                                           solver->symb_chol,
                                           solver->global_forces_vct,
                                           solver->global_solution_vct))
     error("Unable to solve SLAE using Cholesky decomposition");
   LOGINFO("SLAE solved");
-  return TRUE;
+  return TRUE;  
+}
+
+BOOL solver_solve_slae(fea_solver_ptr solver)
+{
+  BOOL result = FALSE;
+  sp_matrix_yale mtx;
+  sp_matrix_yale_init(&mtx,&solver->global_mtx);
+
+  /* LOGINFO("Preparing to solve SLAE, exporting matrix"); */
+  /* sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx"); */
+  LOGINFO("Starting to solve SLAE");
+  if (solver->task_p->solver_type == CHOLESKY)
+    result = solver_solve_slae_cholesky(solver,&mtx);
+  else if (solver->task_p->solver_type == CG)
+    result = solver_solve_slae_cg(solver,&mtx);
+  else if (solver->task_p->solver_type == PCG_ILU)
+    result = solver_solve_slae_pcg_ilu(solver,&mtx);
+
+  sp_matrix_yale_free(&mtx);
+  return result;
 }
 
 
