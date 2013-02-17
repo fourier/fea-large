@@ -260,24 +260,22 @@ static BOOL solver_solve_slae_cg(fea_solver_ptr solver,
 static BOOL solver_solve_slae_pcg_ilu(fea_solver_ptr solver,
                                       sp_matrix_yale_ptr mtx)
 {
-  sp_matrix_skyline m;
-  sp_matrix_skyline_ilu ILU;
+  sp_matrix_skyline_ilu ilu;
 
   int iter = solver->task_p->solver_max_iter;
   real tolerance = solver->task_p->solver_tolerance;
 
-  sp_matrix_skyline_yale_init(&m,mtx);
-  sp_matrix_skyline_ilu_copy_init(&ILU,&m);
+  sp_matrix_create_ilu(&solver->global_mtx, &ilu);
 
   sp_matrix_yale_solve_pcg_ilu(mtx,
-                               &ILU,
+                               &ilu,
                                solver->global_forces_vct,
                                solver->global_forces_vct,
                                &iter,
                                &tolerance,
                                solver->global_solution_vct);
 
-  sp_matrix_skyline_ilu_free(&ILU);
+  sp_matrix_skyline_ilu_free(&ilu);
   return TRUE;
 }
 
