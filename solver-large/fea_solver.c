@@ -122,6 +122,8 @@ int do_main(char* filename)
   }
   else                          /* solve task */
   {
+    LOG("Initial data loaded");
+    
     solve(task, fea_params, nodes, elements, presc_boundary);
   }
   return result;
@@ -154,9 +156,9 @@ void solve( fea_task_ptr task,
      presc_boundary); */
 #endif
   
-  /* Create elements database */
+  LOG("Create elements database");
   solver_create_element_database(solver);
-  /* create an array of shape functions gradients in initial configuration */
+  LOG("Create an array of shape functions gradients in initial configuration");
   solver_create_initial_shape_gradients(solver);
 
   /* Increment loop starts here */
@@ -303,8 +305,11 @@ BOOL solver_solve_slae(fea_solver_ptr solver)
   sp_matrix_yale mtx;
   sp_matrix_yale_init(&mtx,&solver->global_mtx);
 
-  /* LOGINFO("Preparing to solve SLAE, exporting matrix"); */
-  /* sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx"); */
+  LOGINFO("Preparing to solve SLAE"); 
+#if 0
+  sp_matrix_yale_save_file(&mtx,"fea_matrix.mtx");
+  exit(1);
+#endif
   LOGINFO("Starting to solve SLAE");
   if (solver->task_p->solver_type == CHOLESKY)
     result = solver_solve_slae_cholesky(solver,&mtx);
