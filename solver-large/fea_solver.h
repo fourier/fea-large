@@ -41,7 +41,7 @@ typedef real (*disoform_t)(int shape,int dof,real r,real s,real t);
 /*
  * A pointer to the function for exporting data from solver
  */ 
-typedef void (*export_solution_t) (fea_solver_ptr, char *filename);
+typedef void (*export_solution_t) (fea_solver_ptr, const char *filename);
 
 /*
  * A pointer to the function for appling single BC for global
@@ -131,7 +131,7 @@ typedef struct {
   int linesearch_max;           /* maximum number of line searches */
   int arclength_max;            /* maximum number of arc lenght searches */
   BOOL modified_newton;         /* use modified Newton's method or not */
-
+  const char* export_file;      /* export file name - guessing from input */
 } fea_task;
 typedef fea_task* fea_task_ptr;
 
@@ -512,7 +512,8 @@ void solver_ctensor_compr_neohookean(fea_solver_ptr self,
 
 /*************************************************************/
 /* Functions for exporting data in different formats         */
-void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename);
+void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver,
+                                     const char *filename);
 
 
 /*************************************************************/

@@ -27,7 +27,7 @@ static BOOL test_dense_matrix()
   matrix_mul3x3(A,B,R);
   for (i = 0; i < 3; ++ i)
     for (j = 0; j < 3; ++ j)
-      result &= EQL(R[i][j],result_matmul[i][j]);
+      result &= EQUAL(R[i][j],result_matmul[i][j]);
 
   if (result)
   {
@@ -35,7 +35,7 @@ static BOOL test_dense_matrix()
     matrix_transpose_mul3x3(A,B,R);
     for (i = 0; i < 3; ++ i)
       for (j = 0; j < 3; ++ j)
-        result &= EQL(R[i][j],result_matmul_transp[i][j]);
+        result &= EQUAL(R[i][j],result_matmul_transp[i][j]);
   }
 
   if (result)
@@ -44,7 +44,7 @@ static BOOL test_dense_matrix()
     matrix_transpose2_mul3x3(A,B,R);
     for (i = 0; i < 3; ++ i)
       for (j = 0; j < 3; ++ j)
-        result &= EQL(R[i][j],result_matmul_transp2[i][j]);
+        result &= EQUAL(R[i][j],result_matmul_transp2[i][j]);
   }
   printf("test_matrix result: *%s*\n",result ? "pass" : "fail");
   return result;

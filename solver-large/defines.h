@@ -47,7 +47,7 @@ typedef double real;
  * Equals macro for real values
  * See http://www.rsdn.ru/forum/cpp/2640596.1.aspx for explanations
  */
-#define EQL(x,y) ((fabs((x)-(y))<= fmax(fabs((x)),fabs((y)))*(REAL_EPSILON)) ? TRUE:FALSE)
+#define EQUAL(x,y) ((fabs((x)-(y))<= fmax(fabs((x)),fabs((y)))*(REAL_EPSILON)) ? TRUE:FALSE)
 
 /* Kroneker delta */
 #define DELTA(i,j) ((i)==(j) ? 1 : 0)

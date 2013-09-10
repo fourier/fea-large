@@ -35,7 +35,7 @@ BOOL inv3x3(real (*m)[3],real* det)
 {
   real m00,m01,m02,m10,m11,m12,m20,m21,m22;
   *det = det3x3(m);
-  if (EQL(*det,0.0))
+  if (EQUAL(*det,0.0))
     return FALSE;
 	/* calculate components */
 	/* first row */

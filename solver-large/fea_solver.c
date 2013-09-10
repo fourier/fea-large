@@ -15,6 +15,7 @@
 #include "sp_direct.h"
 #include "sp_iter.h"
 #include "sp_file.h"
+#include "sp_utils.h"
 
 #include "logger.h"
 
@@ -238,7 +239,7 @@ void solve( fea_task_ptr task,
   }
   /* export solution */
   LOG("Exporting data...");
-  solver->export_function(solver,"deformed.msh");
+  solver->export_function(solver,task->export_file);
   
   fea_solver_free(solver);
 }
@@ -1496,7 +1497,7 @@ real tetrahedra10_disoform(int shape,int dof,real r,real s,real t)
   return 0;
 }
 
-void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, char *filename)
+void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver, const char *filename)
 {
   /* Our(left) and Gmsh(Right) nodal ordering.
    * 
@@ -1668,11 +1669,14 @@ fea_task_ptr fea_task_alloc()
   task->model.parameters_count = 2;
   task->model.parameters[0] = 100;
   task->model.parameters[1] = 100;
+  task->export_file = 0;
   return task;
 }
 
 fea_task_ptr fea_task_free(fea_task_ptr task)
 {
+  if (task->export_file)
+    free((void*)task->export_file);
   free(task);
   return (fea_task_ptr)0;
 }
@@ -1808,20 +1812,14 @@ BOOL initial_data_load(char *filename,
                        presc_bnd_array_ptr *presc_boundary)
 {
   BOOL result = FALSE;
-  static const char* xml_ext = "XML";
-  static const char* sexp_ext = "SEXP";
-  char* p;
+  static const char* xml_ext = "xml";
+  static const char* sexp_ext = "sexp";
   /* guess by extension */
-  char* ext_ptr = strrchr(filename,'.');
-  
-  if (ext_ptr && *ext_ptr  && *(ext_ptr+1)) /* the extension shall exist */
+  char* ext_ptr = (char*)sp_parse_file_extension(filename);
+
+  if (ext_ptr) /* the extension shall exist */
   {
-    p = ext_ptr+1;
-    /* compare with XML extension */
-    while(*p)
-      if (toupper(*p++) != *xml_ext++)
-        break;
-    if (!*p && !*xml_ext)       /* XML */
+    if (!sp_istrcmp(ext_ptr, xml_ext))
     {
 #ifdef USE_EXPAT
       result = expat_data_load(filename,task,fea_params,nodes,elements,
@@ -1829,16 +1827,17 @@ BOOL initial_data_load(char *filename,
 #endif
       return result;
     }
-    
-    p = ext_ptr+1;
-    /* compare with SEXP extension */
-    while(*p)
-      if (toupper(*p++) != *sexp_ext++)
-        break;
-    if (!*p && !*sexp_ext)       /* SEXP */
+    else if (!sp_istrcmp(ext_ptr, sexp_ext))
     {
       result = sexp_data_load(filename,task,fea_params,nodes,elements,
                               presc_boundary);
+    }
+    if (result && *task)
+    {
+      (*task)->export_file = (char*)malloc(strlen(filename));
+      sp_parse_file_basename(filename, (char*)(*task)->export_file);
+      ext_ptr = (char*)(*task)->export_file + strlen((*task)->export_file);
+      strcpy(ext_ptr,".msh");
     }
   }
   return result;
