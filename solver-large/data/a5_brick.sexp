@@ -2,7 +2,7 @@
 (task
  (model :name A5
         (model-parameters :mu 100 :lambda 100))
- (solution :desired-tolerance 1e-6 :task-type CARTESIAN3D :load-increments-count 2 :modified-newton yes
+ (solution :desired-tolerance 1e-6 :task-type CARTESIAN3D :load-increments-count 120 :modified-newton yes :max-newton-count 110
 	   (element-type :gauss-nodes-count 5 :name TETRAHEDRA10 :nodes-count 10)
      (slae-solver :type CHOLESKY :tolerance 1e-14 :max-iterations 20000)
 	   (line-search :max 0)

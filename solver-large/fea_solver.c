@@ -222,20 +222,20 @@ void solve( fea_task_ptr task,
 
     } while ( fabs(tolerance) > solver->task_p->desired_tolerance &&
               it < task->max_newton_count);
-    /* store current load step */
-    solver_load_step_init(solver,
-                          &solver->load_steps_p[solver->current_load_step],
-                          solver->current_load_step);
-
     /* clear stored stiffness matrix */
     sp_matrix_free(&stiffness);
     LOG("Load increment %d finished",solver->current_load_step+1);
     if (it == solver->task_p->max_newton_count)
     {
+      solver->current_load_step--;
       LOGERROR("Unable to finish load step in %d Newton iterations,exit",
                solver->task_p->max_newton_count);
       break;
     }
+    /* store current load step */
+    solver_load_step_init(solver,
+                          &solver->load_steps_p[solver->current_load_step],
+                          solver->current_load_step);
   }
   /* export solution */
   LOG("Exporting data...");

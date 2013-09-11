@@ -9,7 +9,7 @@ LIBSEXP_PATH = ../../../libsexp
 LIBSPM_PATH = ../../../libspmatrix
 LOGGER_PATH = ../../../liblogger
 
-CFLAGS = -ggdb  --std=c99 -pedantic -Wall -Wextra -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wdeclaration-after-statement -Wmissing-declarations 
+CFLAGS = -ggdb  --std=c99 -O2 -pedantic -Wall -Wextra -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wdeclaration-after-statement -Wmissing-declarations 
 DEFINES = -DCURRENT_SHAPE_GRADIENTS 
 #-DDUMP_DATA -DUSE_EXPAT 
 
