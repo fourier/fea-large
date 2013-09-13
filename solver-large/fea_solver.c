@@ -8,7 +8,6 @@
 #include "fea_solver.h"
 #include "dense_matrix.h"
 #include "tests.h"
-#include "xml_loader.h"
 #include "sexp_loader.h"
 
 #include "sp_matrix.h"
@@ -328,7 +327,7 @@ int parse_cmdargs(int argc, char **argv,char **filename)
 {
   if (argc < 2)
   {
-    printf("Usage: fea_solve input_data.{xml|sexp}\n");
+    printf("Usage: fea_solve input_data.sexp\n");
     return 1;
   }
   *filename = argv[1];
@@ -1812,22 +1811,13 @@ BOOL initial_data_load(char *filename,
                        presc_bnd_array_ptr *presc_boundary)
 {
   BOOL result = FALSE;
-  static const char* xml_ext = "xml";
   static const char* sexp_ext = "sexp";
   /* guess by extension */
   char* ext_ptr = (char*)sp_parse_file_extension(filename);
 
   if (ext_ptr) /* the extension shall exist */
   {
-    if (!sp_istrcmp(ext_ptr, xml_ext))
-    {
-#ifdef USE_EXPAT
-      result = expat_data_load(filename,task,fea_params,nodes,elements,
-                               presc_boundary);
-#endif
-      return result;
-    }
-    else if (!sp_istrcmp(ext_ptr, sexp_ext))
+    if (!sp_istrcmp(ext_ptr, sexp_ext))
     {
       result = sexp_data_load(filename,task,fea_params,nodes,elements,
                               presc_boundary);
