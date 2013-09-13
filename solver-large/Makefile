@@ -5,9 +5,9 @@ PLATFORM = $(shell uname)
 CC = gcc
 
 #EXPAT_ROOT = ../../../../expat-2.0.1
-LIBSEXP_PATH = ../../../libsexp
-LIBSPM_PATH = ../../../libspmatrix
-LOGGER_PATH = ../../../liblogger
+LIBSEXP_PATH = ../../libsexp
+LIBSPM_PATH = ../../libspmatrix
+LOGGER_PATH = ../../liblogger
 
 CFLAGS = -ggdb  --std=c99 -O2 -pedantic -Wall -Wextra -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wdeclaration-after-statement -Wmissing-declarations 
 DEFINES = -DCURRENT_SHAPE_GRADIENTS 
