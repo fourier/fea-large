@@ -1,0 +1,169 @@
+/* [wxMaxima batch file version 1] [ DO NOT EDIT BY HAND! ]*/
+/* [ Created by wxMaxima version 0.7.4 ] */
+
+/* [wxMaxima: input   start ] */
+sh1(r,s,t):=(2*(1-r-s-t)-1)*(1-r-s-t);
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh2(r,s,t):=(2*r-1)*r;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh3(r,s,t):=(2*s-1)*s;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh4(r,s,t):=(2*t-1)*t;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh5(r,s,t):=4*r*(1-r-s-t);
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh6(r,s,t):=4*r*s;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh7(r,s,t):=4*s*(1-r-s-t);
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh8(r,s,t):=4*t*(1-r-s-t);
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh9(r,s,t):=4*r*t;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+sh0(r,s,t):=4*s*t;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh1(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh2(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh3(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh4(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh5(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh6(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh7(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh8(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh9(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh0(r,s,t),r));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh1(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh2(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh3(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh(r,s,t),s))4;
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh4(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh5(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh6(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh7(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh8(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh9(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh0(r,s,t),s));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh1(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh2(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh3(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh4(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh5(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh6(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh7(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh8(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh9(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* [wxMaxima: input   start ] */
+expand(diff(sh0(r,s,t),t));
+/* [wxMaxima: input   end   ] */
+
+/* Maxima can't load/batch files which end with a comment! */
+"Created with wxMaxima"$

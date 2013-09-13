@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<task>
+  <model name="A5">
+	<model-parameters lambda="100" mu="100"/>
+  </model>
+  <solution modified-newton="yes" task-type="CARTESIAN3D" load-increments-count="100" desired-tolerance="1e-8">
+	<element-type name="TETRAHEDRA10" nodes-count="10" gauss-nodes-count="5"/>
+	<line-search max="5"/>
+	<arc-length max="5"/>
+  </solution>
+  <input-data>
+	<geometry>
+	  <nodes count="200">
+		<node id="0" x="0.000000" y="1.000000" z="0.000000"/>
+		<node id="1" x="1.000000" y="1.000000" z="0.000000"/>
+		<!-- ... -->
+	  </nodes>
+	  <elements count="100">
+		<element id="0" node1="69" node2="70" node3="22" node4="82" node5="89" node6="90" node7="91" node8="92" node9="93" node10="94"/>
+		<!-- ... -->
+	  </elements>
+	</geometry>
+	<boundary-conditions>
+	  <prescribed-displacements count="10">
+		<presc-node id="1" node-id="10" x="0" y="0" z="0" type="7"/>
+		<!-- ... -->
+	  </prescribed-displacements>
+	</boundary-conditions>
+  </input-data>
+</task>
+
