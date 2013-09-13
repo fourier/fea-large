@@ -67,7 +67,7 @@ void matrix_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
   {
     for (j = 0; j < 3; ++ j)
     {
-      sum = 0;
+      sum = 0.0;
       for (k = 0; k < 3; ++ k)
         sum += A[i][k]*B[k][j];
       R[i][j] = sum;
@@ -84,7 +84,7 @@ void matrix_transpose_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
   {
     for (j = 0; j < 3; ++ j)
     {
-      sum = 0;
+      sum = 0.0;
       for (k = 0; k < 3; ++ k)
         sum += A[k][i]*B[k][j];
       R[i][j] = sum;
@@ -101,7 +101,7 @@ void matrix_transpose2_mul3x3 (real (*A)[3],real (*B)[3],real (*R)[3])
   {
     for (j = 0; j < 3; ++ j)
     {
-      sum = 0;
+      sum = 0.0;
       for (k = 0; k < 3; ++ k)
         sum += A[i][k]*B[j][k];
       R[i][j] = sum;

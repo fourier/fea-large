@@ -40,7 +40,7 @@ all: $(OUTPUT)
 	@echo "Build for $(PLATFORM) Done. "
 
 lint:
-	splint $(DEFINES) $(INCLUDES) -preproc -likelybool *.c
+	splint $(DEFINES) $(INCLUDES) -fixedformalarray -preproc -likelybool -predboolint +posixlib *.c
 
 .PHONY : clean
 clean :
