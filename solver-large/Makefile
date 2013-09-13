@@ -40,7 +40,7 @@ all: $(OUTPUT)
 	@echo "Build for $(PLATFORM) Done. "
 
 lint:
-	splint +booltype=BOOL -boolfalse=FALSE -booltrue=TRUE *.c
+	splint $(DEFINES) $(INCLUDES) -preproc -likelybool *.c
 
 .PHONY : clean
 clean :
