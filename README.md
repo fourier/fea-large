@@ -22,3 +22,5 @@ In order to compile the solver the following dependencies needed:
 - Logger library: https://github.com/fourier/liblogger
 - SEXP parser library: https://github.com/fourier/libsexp
 - Sparse Matrix library: https://github.com/fourier/libspmatrix
+
+Copyright(c) Alexey Veretennikov<alexey dot veretennikov at gmail dot com> 2005-2013
