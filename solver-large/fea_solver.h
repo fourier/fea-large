@@ -12,6 +12,7 @@
 #include "sp_matrix.h"
 #include "sp_direct.h"
 #include "dense_matrix.h"
+#include "fea_model.h"
 
 /* default value of the tolerance for the iterative solvers */
 #define MAX_ITERATIVE_TOLERANCE 1e-14
@@ -19,11 +20,9 @@
 #define MAX_ITERATIVE_ITERATIONS 20000
 
 /*************************************************************/
-/* Global variables                                          */
+/* Forward declarations                                      */
 
 typedef struct fea_solver_tag* fea_solver_ptr;
-typedef struct fea_model fea_model;
-typedef fea_model* fea_model_ptr;
 
 /*************************************************************/
 /* Function pointers declarations                            */
@@ -51,21 +50,6 @@ typedef void (*export_solution_t) (fea_solver_ptr, const char *filename);
  */
 typedef void (*apply_bc_t) (fea_solver_ptr self, int index, real arg);
 
-/*
- * A pointer to the function for calculating Cauchy stresses by given
- * deformation gradient
- */
-typedef void (*stress_func_t)(fea_model_ptr self,
-                              real (*graddef_tensor)[MAX_DOF],
-                              real (*stress_tensor)[MAX_DOF]);
-/*
- * A pointer to the function for calculating the C elasticity tensor
- * by given deformation gradient
- */
-typedef void (*ctensor_func_t)(fea_model_ptr self,
-                               real (*graddef)[MAX_DOF],
-                               real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
-
 
 /*************************************************************/
 /* Enumerations declarations                                 */
@@ -74,11 +58,6 @@ typedef enum  {
   /* PLANE_STRESS, PLANE_STRAIN, AXISYMMETRIC,  */
   CARTESIAN3D
 } task_type;
-
-typedef enum {
-  MODEL_A5,
-  MODEL_COMPRESSIBLE_NEOHOOKEAN
-} model_type;
 
 typedef enum {
   CG,
@@ -106,19 +85,6 @@ typedef enum  {
 
 /*************************************************************/
 /* Data structures                                           */
-
-struct fea_model {
-  model_type model;                         /* model type */
-  real parameters[MAX_MATERIAL_PARAMETERS]; /* model material parameters */
-  int parameters_count;                     /* number of material params */
-  stress_func_t stress; /* a pointer to the function
-                         * for calculation of the
-                         * model-specific Cauchy
-                         * in gauss nodes per element */
-  ctensor_func_t ctensor; /* a function pointer to the C elasticity
-                           * tensor
-                           */
-};
 
 /*
  * Task type declaration.
@@ -475,43 +441,6 @@ real tetrahedra10_disoform(int shape,int dof,real r,real s,real t);
 
 
 /*************************************************************/
-/* Functions particular material models                      */
-
-/*
- * Calculate stress tensor of the material model A5 by given
- * deformation gradient
- */
-void fea_model_stress_A5(fea_model_ptr self,
-                         real (*F)[MAX_DOF],
-                         real (*stress_tensor)[MAX_DOF]);
-
-/*
- * Calculate stress tensor of the Neo-hookean compressible model by given
- * deformation gradient
- */
-void fea_model_stress_compr_neohookean(fea_model_ptr self,
-                                       real (*F)[MAX_DOF],
-                                       real (*S)[MAX_DOF]);
-/*
- * Calculate 4th rank tensor C of the elastic material model A5
- * T = C(4)**S
- * S - deformation tensor
- * by given deformation gradient
- */
-void fea_model_ctensor_A5(fea_model_ptr self,
-                          real (*graddef)[MAX_DOF],
-                          real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
-/*
- * Calculate 4th rank tensor C of the Neo-hookean compressible material model
- * T = C(4)**S
- * S - deformation tensor 
- * by given deformation gradient
- */
-void fea_model_ctensor_compr_neohookean(fea_model_ptr self,
-                                        real (*graddef)[MAX_DOF],
-                                        real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF]);
-
-/*************************************************************/
 /* Functions for exporting data in different formats         */
 void solver_export_tetrahedra10_gmsh(fea_solver_ptr solver,
                                      const char *filename);
@@ -566,11 +495,6 @@ void dump_input_data( char* filename,
  * This function is used on a construction phase
  */
 void solver_create_element_params(fea_solver_ptr self);
-
-/*
- * Initialize material model functions
- */
-void solver_create_model_params(fea_solver_ptr self);
 
 /* Allocates memory and construct elements database for solver */
 void solver_create_element_database(fea_solver_ptr self);

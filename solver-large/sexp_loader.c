@@ -18,7 +18,7 @@
 #include "libsexp.h"
 
 /* An input data structure used in parser */
-typedef struct parse_data_tag {
+typedef struct {
   fea_task *task;
   fea_solution_params *fea_params;
   nodes_array *nodes;
