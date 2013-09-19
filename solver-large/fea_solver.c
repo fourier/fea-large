@@ -920,7 +920,9 @@ void solver_local_constitutive_part(fea_solver_ptr self,int element)
   for (gauss = 0; gauss < self->fea_params_p->gauss_nodes_count ; ++ gauss)
   {
     /* obtain a C tensor */
-    self->ctensor(self,self->graddefs[element][gauss].components,ctens);
+    self->task_p->model.ctensor(&self->task_p->model,
+                                self->graddefs[element][gauss].components,
+                                ctens);
 
     grads = self->shape_gradients[element][gauss];
     if (grads)
@@ -1174,9 +1176,9 @@ void solver_element_gauss_graddef(fea_solver_ptr self,
 #endif /* CURRENT_SHAPE_GRADIENTS */
 }
 
-void solver_element_gauss_stress_A5(fea_solver_ptr self,
-                                    real F[MAX_DOF][MAX_DOF],
-                                    real stress_tensor[MAX_DOF][MAX_DOF])
+void fea_model_stress_A5(fea_model_ptr self,
+                         real (*F)[MAX_DOF],
+                         real (*stress_tensor)[MAX_DOF])
 {
   int i,j,k;
   real C[MAX_DOF][MAX_DOF];
@@ -1186,8 +1188,8 @@ void solver_element_gauss_stress_A5(fea_solver_ptr self,
   real detF = 0;
   real I1 = 0;
 
-  lambda = self->task_p->model.parameters[0];
-  mu = self->task_p->model.parameters[1];
+  lambda = self->parameters[0];
+  mu = self->parameters[1];
   
   /* G = F'*F */
   for (i = 0; i < MAX_DOF; ++ i)
@@ -1227,17 +1229,17 @@ void solver_element_gauss_stress_A5(fea_solver_ptr self,
   matrix_transpose2_mul3x3(C,F,stress_tensor);
 }
 
-void solver_element_gauss_stress_compr_neohookean(fea_solver_ptr self,
-                                                  real F[MAX_DOF][MAX_DOF],
-                                                  real S[MAX_DOF][MAX_DOF])
+void fea_model_stress_compr_neohookean(fea_model_ptr model,
+                                       real (*F)[MAX_DOF],
+                                       real (*S)[MAX_DOF])
 {
   int i,j,k;
   real B[MAX_DOF][MAX_DOF];
   real lambda,mu;
   real J = det3x3(F);
 
-  lambda = self->task_p->model.parameters[0];
-  mu = self->task_p->model.parameters[1];
+  lambda = model->parameters[0];
+  mu = model->parameters[1];
   
   /* B = F*F' */
   for (i = 0; i < MAX_DOF; ++ i)
@@ -1267,19 +1269,19 @@ void solver_element_gauss_stress(fea_solver_ptr self,
 {
   /* get deformation gradient */
   solver_element_gauss_graddef(self,element,gauss,graddef_tensor);
-  self->element_gauss_stress(self,graddef_tensor,stress_tensor);
+  self->task_p->model.stress(&self->task_p->model,graddef_tensor,stress_tensor);
 }
 
 
-void solver_ctensor_A5(fea_solver_ptr self,
-                       real (*graddef)[MAX_DOF],
-                       real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+void fea_model_ctensor_A5(fea_model_ptr self,
+                          real (*graddef)[MAX_DOF],
+                          real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
   int i,j,k,l;
   real lambda,mu;
   real detF = det3x3(graddef);
-  lambda = self->task_p->model.parameters[0];
-  mu = self->task_p->model.parameters[1];
+  lambda = self->parameters[0];
+  mu = self->parameters[1];
   for ( i = 0; i < MAX_DOF; ++ i )
     for ( j = 0; j < MAX_DOF; ++ j )
       for ( k = 0; k < MAX_DOF; ++ k )
@@ -1290,15 +1292,15 @@ void solver_ctensor_A5(fea_solver_ptr self,
               + mu * DELTA (i, l) * DELTA (j, k) ) / detF;
 }
 
-void solver_ctensor_compr_neohookean(fea_solver_ptr self,
-                                     real (*graddef)[MAX_DOF],
-                                     real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
+void fea_model_ctensor_compr_neohookean(fea_model_ptr self,
+                                        real (*graddef)[MAX_DOF],
+                                        real (*ctensor)[MAX_DOF][MAX_DOF][MAX_DOF])
 {
   int i,j,k,l;
   real lambda,mu,lambda1,mu1;
   real J = det3x3(graddef);
-  lambda = self->task_p->model.parameters[0];
-  mu = self->task_p->model.parameters[1];
+  lambda = self->parameters[0];
+  mu = self->parameters[1];
   lambda1 = lambda/J;
   mu1 = (mu - lambda*log(J))/J;
   for ( i = 0; i < MAX_DOF; ++ i )
@@ -1616,13 +1618,12 @@ void solver_create_model_params(fea_solver_ptr self)
   switch(self->task_p->model.model)
   {
   case MODEL_A5:
-    self->element_gauss_stress = solver_element_gauss_stress_A5;
-    self->ctensor = solver_ctensor_A5;
+    self->task_p->model.stress = fea_model_stress_A5;
+    self->task_p->model.ctensor = fea_model_ctensor_A5;
     break;
   case MODEL_COMPRESSIBLE_NEOHOOKEAN:
-    self->element_gauss_stress =
-      solver_element_gauss_stress_compr_neohookean;
-    self->ctensor = solver_ctensor_compr_neohookean;
+    self->task_p->model.stress = fea_model_stress_compr_neohookean;
+    self->task_p->model.ctensor = fea_model_ctensor_compr_neohookean;
     break;
   default:
     assert(FALSE);
