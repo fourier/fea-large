@@ -282,9 +282,6 @@ BOOL sexp_data_load(char *filename,
 {
   BOOL result = FALSE;
   FILE* sexp_document_file;
-  size_t file_size = 0;
-  size_t read_bytes = 0;
-  char *file_contents = (char*)0;
   sexp_item* sexp;
   parse_data parse;
 
@@ -295,33 +292,10 @@ BOOL sexp_data_load(char *filename,
     fprintf(stderr,"Error, could not open file %s\n",filename);
     return FALSE;
   }
-  /* Determine file size */
-  if (fseek(sexp_document_file,0,SEEK_END))
-  {
-    fprintf(stderr,"Error reading file %s\n",filename);
-    return FALSE;
-  }
-  file_size = ftell(sexp_document_file);
-  /* rewind to the begin of file */
-  fseek(sexp_document_file,0,SEEK_SET);
-
-  /* read whole file */
-  file_contents = (char*)malloc(file_size+1);
-  read_bytes = fread(file_contents,1,file_size,sexp_document_file);
-  if (read_bytes != file_size && !feof(sexp_document_file))
-  {
-    free(file_contents);
-    return FALSE;
-  }
-  assert(read_bytes == file_size);
-  fclose(sexp_document_file);
-  file_contents[read_bytes] = '\0';
-  
   /* parse input */
-  sexp = sexp_parse(file_contents);
+  sexp = sexp_parse_file(sexp_document_file);
   if (!sexp)
   {
-    free(file_contents);
     printf("Error: unable to parse SEXP input\n");
     return FALSE;
   }
@@ -347,7 +321,7 @@ BOOL sexp_data_load(char *filename,
     
     result = TRUE;
   }
-  free(file_contents);
+
   sexp_item_free(sexp);
 
   return result;
