@@ -1,26 +1,11 @@
-INTRODUCTION
-============
+# Give Up GitHub
 
-This source package is a **Finite Elements Method** implementation for the **Finite Strains theory**. 
-It also contains a bunch of MATLAB/Octave prototype implementations, auxulary utilities/parsers,
-exact solutions for specific cases(uniaxial deformation, uniform pressure of the cylinder -
-*Lame problem*).
+This project has given up GitHub.  ([See Software Freedom Conservancy's *Give Up  GitHub* site for details](https://GiveUpGitHub.org).)
 
+You can now find this project at [https://codeberg.org/fourier/fea-large](https://codeberg.org/fourier/fea-large) instead.
 
-DIRECTORY STRUCTURE
-===================
- * **solver-large** - The C-language solver for finite-strains (*large deformations*) problems with displacements boundary conditions (for now). Material models supported: *Neo-Hookean compressible* material model; *A5 compressible*.
- * **solver-prototype** - a bunch of MATLAB/Octave prototypes for different FEA problems
- * **exact-solutions** - contains exact solutions for the following problems:
-   * Uniaxial tension of the block with different material models
-   * Uniform pressure of the cylinder (Lame problem)
- * **utilities** - set of file format converters/results analysers
+Any use of this project's code by GitHub Copilot, past or present, is done without our permission.  We do not consent to GitHub's use of this project's code in Copilot.
 
-REQUIREMENTS
-============
-In order to compile the solver the following dependencies needed:
-- Logger library: https://github.com/fourier/liblogger
-- SEXP parser library: https://github.com/fourier/libsexp
-- Sparse Matrix library: https://github.com/fourier/libspmatrix
+Join us; you can [give up GitHub](https://GiveUpGitHub.org) too!
 
-Copyright(c) Alexey Veretennikov<alexey dot veretennikov at gmail dot com> 2005-2013
+![Logo of the GiveUpGitHub campaign](https://sfconservancy.org/img/GiveUpGitHub.png)
